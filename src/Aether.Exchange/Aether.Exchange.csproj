@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Aether.Exchange</AssemblyName>
+    <RootNamespace>Aether.Exchange</RootNamespace>
+  </PropertyGroup>
+  <!-- Exchange 核心引擎：撮合/订单簿/风险引擎/账户/持仓/行情。
+       零外部依赖：Domain 类型（Order/Trade/Account/Position/Direction/OffsetFlag...）
+       全部定义在本仓 Domain/ 目录。与 CTP 协议层完全解耦。 -->
+</Project>

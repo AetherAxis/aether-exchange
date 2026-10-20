@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Aether.Exchange.Rpc</AssemblyName>
+    <RootNamespace>Aether.Exchange.Rpc</RootNamespace>
+  </PropertyGroup>
+  <!-- RPC 传输层：JSON-RPC client/server + wire framing。纯技术层，零 CTP 协议依赖。
+       所有 wire 类型使用 Exchange Domain 类型（Order/Trade/Tick/Account/Position/...）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\Aether.Exchange\Aether.Exchange.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Aether.Exchange.Storage</AssemblyName>
+    <RootNamespace>Aether.Exchange.Storage</RootNamespace>
+  </PropertyGroup>
+  <!-- SQLite 存储实现层：SqliteStoreBase + SimStore + SqliteMigrations。
+       反向引用 Exchange 核心（ISimStore 接口 + Domain 类型定义在核心引擎里）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\Aether.Exchange\Aether.Exchange.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+</Project>
