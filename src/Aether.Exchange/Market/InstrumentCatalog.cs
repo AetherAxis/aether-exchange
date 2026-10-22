@@ -34,9 +34,8 @@ public static class InstrumentCatalog
     /// 品种级元数据（不含具体月份）——月份只影响代码，不影响乘数/保证金率/最小变动价位，
     /// 故未知月份（如用户的真实持仓 <c>ag2602</c>）能按品种自动派生。
     /// <para>
-    /// <c>zx</c> 品种 = 本交易所自有品种（「我就是交易所」）：zxNNN 系列（zx001/zx002…）按此派生——
-    /// 上市表默认 <c>zx001</c>（2 字母+3 数字——对齐官方合约命名，sim001@3字母致前置解析器拒识，2026-10-01 实证）。
-    /// 价格发现归订单簿（挂单/成交驱动）；真实行情转发明确不做（本柜台是自己的交易所）。
+    /// <c>zx</c> / <c>ax</c> 是本交易所自有品种（「我就是交易所」的自定义面）：真实期货品种
+    /// 直接按交易所标准元数据；交易所自定义品种（BTC 对标 / Aether 币价）经派生链落表。
     /// </para>
     /// </summary>
     private static readonly Dictionary<string, SimInstrument> Varieties = new(StringComparer.OrdinalIgnoreCase)

@@ -140,12 +140,12 @@ public sealed class SimTradingCore : IDisposable
                 foreach (var seed in _instruments.Values.ToList()) Persist(() => _store.SaveInstrumentAsync(seed, ct));
             }
 
-            // 上市合约表（host 上架清单）：null/空 ⇒ 默认 = zx001（本交易所自有品种——「我就是交易所」；
-            // 2026-09-27 起从种子 9 合约改为单合约）。价格源 = 订单簿价格发现（挂单/成交驱动）。
-            // 自定义 id 经解析链（精确→品种派生→合成）落表；种子 9 合约仍可用 AETHER_CTP_SIM_BOARD 上架。
+            // 上市合约表（host 上架清单）：null/空 ⇒ 默认 = ax001（Aether 币价期货，ExchangeId=AETHER；
+            // 交易所自有品种，非真实期货）。自定义 id 经解析链（精确→品种派生→合成）落表。
+            // host 环境变量 AETHER_CTP_SIM_BOARD 可覆盖（逗号分隔）。
             var listedIds = _options.ListedInstruments is { Count: > 0 }
                 ? _options.ListedInstruments
-                : new[] { "zx001" };
+                : new[] { "ax001" };
             foreach (var id in listedIds.Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 ResolveMarketInstrument(id);
@@ -442,8 +442,8 @@ public sealed class SimTradingCore : IDisposable
     }
 
     /// <summary>
-    /// 查询上市合约表（host 上架清单：<see cref="SimOptions.ListedInstruments"/> 或默认 zx001——「我就是交易所」的自定义面）。
-    /// wire <c>queryInstruments</c> 的数据源；与全量表 <see cref="QueryInstruments"/> 区分。
+    /// 查询上市合约表（host 上架清单：<see cref="SimOptions.ListedInstruments"/> 或默认 ax001——
+    /// 「我就是交易所」的自定义面）。wire <c>queryInstruments</c> 的数据源；与全量表 <see cref="QueryInstruments"/> 区分。
     /// </summary>
     public IReadOnlyList<SimInstrument> QueryListedInstruments()
     {
