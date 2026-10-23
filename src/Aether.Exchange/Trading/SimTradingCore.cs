@@ -715,13 +715,15 @@ public sealed class SimTradingCore : IDisposable
     /// <returns>激活成功与否（未上市 ⇒ false，行情不推）。</returns>
     public bool ActivateMarket(string instrumentId)
     {
+        // 先归一化：空串走「未上市」分支，后续三处（解析/激活/推快照）必须拿到同一个非空 id。
+        var id = instrumentId ?? "";
         lock (_gate)
         {
-            if (!_listedIds.Contains(instrumentId ?? "")) return false;   // 未上市：不激活
-            ResolveMarketInstrument(instrumentId ?? "");
-            var ok = Market.Activate(instrumentId ?? "");
+            if (!_listedIds.Contains(id)) return false;   // 未上市：不激活
+            ResolveMarketInstrument(id);
+            var ok = Market.Activate(id);
             if (ok)
-                Market.OnBookChanged(instrumentId);   // 订阅即推快照（此后 tick 全事件驱动）
+                Market.OnBookChanged(id);   // 订阅即推快照（此后 tick 全事件驱动）
             return ok;
         }
     }

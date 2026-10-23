@@ -173,7 +173,7 @@ public class ExchangeModeTests
 
         // FOK 不能全成 ⇒ 整单作废（无庄家兜底可补量）
         Assert.Equal(SimOrderStatus.NoTradeNotQueueing, Assert.Single(core.QueryOrders("bob", null)).OrderStatusRaw);
-        Assert.Empty(trades.Snapshot.Where(t => t.AccountId == "bob"));
+        Assert.DoesNotContain(trades.Snapshot, t => t.AccountId == "bob");
         // alice 的挂单原封不动
         Assert.Equal(SimOrderStatus.NoTradeQueueing, Assert.Single(core.QueryOrders("alice", null)).OrderStatusRaw);
     }
@@ -207,7 +207,7 @@ public class ExchangeModeTests
         var ok = core.ActivateMarket(SimHarness.Instrument);   // 订阅 ⇒ 立即推快照
 
         Assert.True(ok);
-        var snapshot = Assert.Single(ticks.Snapshot.Where(t => t.InstrumentId == SimHarness.Instrument));
+        var snapshot = Assert.Single(ticks.Snapshot, t => t.InstrumentId == SimHarness.Instrument);
         Assert.Equal(7000, snapshot.BidPrice, 6);
         Assert.Equal(5, snapshot.BidVolume);
     }

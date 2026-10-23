@@ -24,8 +24,8 @@ public class CrossAccountMatchingTests
         core.InsertOrder("bob", SimHarness.Market(Direction.Sell, 1));
 
         // 双方各自拿到自己账户的成交（TradeId 从各自序列铸——同一起点 "1"）
-        var aliceTrade = Assert.Single(trades.Snapshot.Where(t => t.AccountId == "alice")).Trade;
-        var bobTrade = Assert.Single(trades.Snapshot.Where(t => t.AccountId == "bob")).Trade;
+        var aliceTrade = Assert.Single(trades.Snapshot, t => t.AccountId == "alice").Trade;
+        var bobTrade = Assert.Single(trades.Snapshot, t => t.AccountId == "bob").Trade;
         Assert.Equal(7000, aliceTrade.Price, 6);
         Assert.Equal(7000, bobTrade.Price, 6);
         Assert.Equal("1", aliceTrade.TradeId);

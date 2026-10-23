@@ -40,5 +40,13 @@ jobs:
       # 测试同仓自持（2026-10-23 迁入——不引兄弟仓，CI 无须额外 checkout）：
       # 138 例 = 撮合/订单生命周期/会计不变量/费用/风控/认证/持久化/RPC wire。
       - name: Test
-        run: dotnet test Aether.Exchange.slnx -c Release --no-build
+        run: dotnet test Aether.Exchange.slnx -c Release --no-build --collect:"XPlat Code Coverage"
         working-directory: aether-exchange
+
+      # 覆盖率留档（撮合/会计不变量是回归重灾区——有基线才看得出被新改动啃掉多少）
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-aether-exchange
+          path: aether-exchange/tests/**/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn

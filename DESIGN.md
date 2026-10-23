@@ -91,3 +91,11 @@ CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主�
 | 6 | P2 | 推送 | 出站无界 Channel；每股成交都发 tick 并落盘，无背压 | 有界通道 + 慢客户端合并/丢帧 | 客户端需快照兜底 |
 | 7 | P3 | 协议/存储 | `WithdrawArg` 仍收 `asset="coin"`；`sim_spot_minted` 等无消费者 | 标 deprecated 并迁移下线 | 老库兼容 |
 | 8 | P3 | 风控 | 注释「未做自成交检查/频率/持仓限额」；自成交是跳过而非拒绝 | 补 STP 与单笔上限 | 默认开启影响做市 bot |
+
+## 7. 本轮升级落地（2026-10-24）
+
+- **CS8604 真修**：`SimTradingCore.ActivateMarket` 对 `instrumentId ?? ""` 归一后再用于 `Contains/Resolve/Activate/OnBookChanged`（清构建才暴露的空引用告警）。
+- **xUnit 分析器告警清零**：`Assert.Single(x.Where(...))` → `Assert.Single(x, pred)`、`Assert.Empty(x.Where(...))` → `Assert.DoesNotContain(x, pred)`。
+- **CI 覆盖率留档**：Test 步加 `--collect:"XPlat Code Coverage"` + `upload-artifact`（撮合/会计不变量是回归重灾区，需要有基线）。
+
+**未做（有意）**：§6 的撮合重启语义文档化（要先把「重启后订单簿/挂单如何恢复」定成产品口径，不宜由升级顺手定义）。
