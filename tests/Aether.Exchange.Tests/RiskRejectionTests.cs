@@ -1,0 +1,243 @@
+using System;
+using System.Linq;
+
+namespace Aether.Exchange.Tests;
+
+/// <summary>
+/// 风控拒单：拒单是**同步抛出** <see cref="ExchangeBusinessException"/>（真柜台的成功路径不返回错误码，
+/// 异常是 <c>ICtpSession</c> 接缝上表达拒单的唯一通道），且拒单必须**不留任何痕迹**——
+/// 不动资金、不建报单、不消耗单号。
+/// </summary>
+public class RiskRejectionTests
+{
+    /// <summary>断言下单被拒且错误码为 <paramref name="expectedErrorId"/>。</summary>
+    private static ExchangeBusinessException Rejected(SimTradingCore core, OrderRequest request)
+    {
+        var ex = Assert.Throws<ExchangeBusinessException>(() => core.InsertOrder(SimHarness.Account, request));
+        Assert.False(string.IsNullOrWhiteSpace(ex.ErrorMsg), "拒单必须带可读原因（要原样透给客户端 UI）");
+        return ex;
+    }
+
+    private static ExchangeBusinessException RejectedWith(SimTradingCore core, OrderRequest request, int expectedErrorId)
+    {
+        var ex = Rejected(core, request);
+        Assert.Equal(expectedErrorId, ex.ErrorId);
+        return ex;
+    }
+
+    [Fact]
+    public async Task 手数非正被拒()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        RejectedWith(core, SimHarness.Market(Direction.Buy, 0), SimErrorCodes.InvalidVolume);
+        RejectedWith(core, SimHarness.Market(Direction.Buy, -3), SimErrorCodes.InvalidVolume);
+    }
+
+    [Fact]
+    public async Task 限价非正被拒而市价不受此限()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        RejectedWith(core, SimHarness.Limit(Direction.Buy, 1, 0), SimErrorCodes.InvalidPrice);
+        RejectedWith(core, SimHarness.Limit(Direction.Buy, 1, -1), SimErrorCodes.InvalidPrice);
+
+        // 市价单的 LimitPrice 无意义（契约要求必填但会被忽略）——价格校验只针对限价单
+        var market = SimHarness.Market(Direction.Buy, 1);
+        Assert.Equal(0, market.LimitPrice);
+        Assert.Equal("000000000001", core.InsertOrder(SimHarness.Account, market).ClientOrderRef);
+    }
+
+    [Fact]
+    public async Task 限价低于一个最小变动价位被拒_编码损坏防御()
+    {
+        // 2026-10-13 双 bot 本地实测：⑲ codec 把含 FE 字节的 99.97 解成 5.11e-210 入簿——
+        // 垃圾卖单穿透买侧 + tick ask 垃圾反馈环。健全带 = 拒绝 < PriceTick 的限价。
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        RejectedWith(core, SimHarness.Limit(Direction.Buy, 1, 5.11e-210), SimErrorCodes.InvalidPrice);
+        RejectedWith(core, SimHarness.Limit(Direction.Sell, 1, 0.001), SimErrorCodes.InvalidPrice);   // ag2610 PriceTick=1
+        // 正常价（≥ 一个 tick）不受影响
+        Assert.Equal("000000000001", core.InsertOrder(SimHarness.Account, SimHarness.Limit(Direction.Buy, 1, SimHarness.Bid)).ClientOrderRef);
+    }
+
+    [Fact]
+    public async Task 未上市合约被拒()
+    {
+        // 上市闸门恒生效：上市表 = 唯一可交易集合——zz9999 不在上市表 ⇒ 拒 90002（品种可派生也不行，上架是显式决定）
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        RejectedWith(core, SimHarness.Market(Direction.Buy, 1, instrument: "zz9999"),
+            SimErrorCodes.UnknownInstrument);
+
+        // 空合约代码同样归入「未上市」
+        RejectedWith(core, SimHarness.Market(Direction.Buy, 1, instrument: ""),
+            SimErrorCodes.UnknownInstrument);
+    }
+
+    [Fact]
+    public async Task 未知品种上架后经合成可交易()
+    {
+        // 「我就是交易所」的上架自由：BOARD 写什么 id 都能上——zz9999 经合成兜底落表（默认乘数/保证金率）
+        var core = await SimHarness.NewLoggedInCoreAsync(
+            SimHarness.Options() with { ListedInstruments = new[] { SimHarness.Instrument, "zz9999" } });
+        core.InsertOrder(SimHarness.MakerAccount, SimHarness.Limit(Direction.Sell, 5, 100, instrument: "zz9999"));   // zz 做市供给对手价
+
+        var inserted = core.InsertOrder(SimHarness.Account, SimHarness.Market(Direction.Buy, 1, instrument: "zz9999"));
+
+        // 合成合约可正常撮合（用默认乘数/保证金率）——这是「随便填个代码上架也能跑通流程」的能力来源
+        Assert.Equal("000000000001", inserted.ClientOrderRef);
+        var synthetic = Assert.Single(core.QueryInstruments(), i => i.InstrumentId == "zz9999");
+        Assert.Equal(InstrumentCatalog.DefaultUnknownVolumeMultiple, synthetic.VolumeMultiple);
+        Assert.True(core.QueryAccount(SimHarness.Account).CurrMargin > 0, "合成合约的开仓应产生保证金占用");
+    }
+
+    [Fact]
+    public async Task 资金不足被拒()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        // 单手占用 ≈ 12601.8，可用 100 万 ⇒ 100 手需 126 万，必超
+        var ex = RejectedWith(core, SimHarness.Market(Direction.Buy, 100), SimErrorCodes.InsufficientFunds);
+
+        // 资金不足的原因串是「需保证金 1260180.00 + 手续费 …，可用 …。」
+        // 拒单原因必须把「需多少 / 有多少」写清楚——用户靠这句话判断该填多少手
+        Assert.Contains("资金不足", ex.ErrorMsg);
+        Assert.Contains("1260180", ex.ErrorMsg);
+
+        // 边界：恰好把可用资金用尽的一笔应当放行（1e-6 容差，防浮点把可成交的单判死）
+        var affordable = core.QueryAccount(SimHarness.Account).Available;
+        var lots = (int)Math.Floor(affordable / 12601.8);
+        Assert.True(core.InsertOrder(SimHarness.Account, SimHarness.Limit(Direction.Buy, lots, 7001)).ClientOrderRef.Length > 0);
+    }
+
+    [Fact]
+    public async Task 无可平持仓时平仓被拒()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        RejectedWith(core, SimHarness.Market(Direction.Sell, 1, OffsetFlag.Close),
+            SimErrorCodes.NoPositionToClose);
+        RejectedWith(core, SimHarness.Market(Direction.Buy, 1, OffsetFlag.Close),
+            SimErrorCodes.NoPositionToClose);
+    }
+
+    [Fact]
+    public async Task 平仓手数超过可平量被拒()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        core.InsertOrder(SimHarness.Account, SimHarness.Market(Direction.Buy, 1));
+
+        var ex = RejectedWith(core, SimHarness.Market(Direction.Sell, 2, OffsetFlag.Close),
+            SimErrorCodes.CloseVolumeExceeds);
+        Assert.Contains("可平", ex.ErrorMsg);
+
+        // 恰好 1 手可平 ⇒ 放行
+        Assert.NotNull(core.InsertOrder(SimHarness.Account, SimHarness.Market(Direction.Sell, 1, OffsetFlag.Close)));
+        Assert.Empty(core.QueryPositions(SimHarness.Account));
+    }
+
+    [Fact]
+    public async Task 挂单占用的可平量不会被重复平仓()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        core.InsertOrder(SimHarness.Account, SimHarness.Market(Direction.Buy, 2));
+
+        // 第一笔平仓单挂在 7100（不成交），占用 2 手可平量
+        // 注意方向：卖单要**高于**买一才挂得住（买限价 6900 挂、卖限价 6900 会立即吃掉买一 6999）
+        core.InsertOrder(SimHarness.Account, SimHarness.Limit(Direction.Sell, 2, 7100, OffsetFlag.Close));
+
+        // 第二笔平仓单：名义上还有 2 手持仓，但已被挂单全部占用 ⇒ 拒
+        RejectedWith(core, SimHarness.Market(Direction.Sell, 1, OffsetFlag.Close),
+            SimErrorCodes.NoPositionToClose);
+    }
+
+    [Fact]
+    public async Task 平仓单只冻手续费不冻保证金()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        core.InsertOrder(SimHarness.Account, SimHarness.Market(Direction.Buy, 1));
+        var opened = core.QueryAccount(SimHarness.Account).CurrMargin;
+
+        // 挂一笔不成交的平仓单（卖限价 7100 > 买一 6999 ⇒ 穿过不了，留在队列里）
+        core.InsertOrder(SimHarness.Account, SimHarness.Limit(Direction.Sell, 1, 7100, OffsetFlag.Close));
+
+        var pending = core.QueryAccount(SimHarness.Account);
+        Assert.Equal(opened, pending.CurrMargin, 2);  // 平仓不新增占用
+        Assert.Equal(0, pending.FrozenMargin, 2);     // 也冻结保证金（平仓是减仓）
+        Assert.True(pending.FrozenCash > 0, "平仓单仍需冻结手续费");
+    }
+
+    [Fact]
+    public async Task 拒单不消耗单号也不改账本()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        RejectedWith(core, SimHarness.Market(Direction.Buy, 0), SimErrorCodes.InvalidVolume);
+        RejectedWith(core, SimHarness.Market(Direction.Buy, 100), SimErrorCodes.InsufficientFunds);
+
+        // 单号仍从 1 起 —— 拒单发生在单号分配**之前**，否则客户端会看到跳号
+        var inserted = core.InsertOrder(SimHarness.Account, SimHarness.Market(Direction.Buy, 1));
+        Assert.Equal("000000000001", inserted.ClientOrderRef);
+        Assert.Equal(1, inserted.RequestId);
+
+        Assert.Single(core.QueryOrders(SimHarness.Account));
+        var account = core.QueryAccount(SimHarness.Account);
+        Assert.Equal(12601.8, account.CurrMargin, 2);
+        Assert.Equal(0, account.FrozenMargin, 2);
+    }
+
+    [Fact]
+    public async Task 撤不存在的报单被拒()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        var bogus = new CancelKey(SimHarness.Broker, SimHarness.Account, 1, 1, "999999999999", SimHarness.Exchange);
+        var ex = Assert.Throws<ExchangeBusinessException>(() => core.CancelOrder(SimHarness.Account, bogus));
+        Assert.Equal(SimErrorCodes.OrderNotFound, ex.ErrorId);
+    }
+
+    [Fact]
+    public async Task 撤已终态的报单被拒()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        core.InsertOrder(SimHarness.Account, SimHarness.Market(Direction.Buy, 1)); // 立即全成交
+        var done = core.QueryOrders(SimHarness.Account).Single();
+
+        var ex = Assert.Throws<ExchangeBusinessException>(() => core.CancelOrder(SimHarness.Account, SimHarness.RefOf(done)));
+        Assert.Equal(SimErrorCodes.OrderNotCancelable, ex.ErrorId);
+        Assert.Contains("不可撤", ex.ErrorMsg);
+    }
+
+    [Fact]
+    public async Task 未登录账号撤单被拒()
+    {
+        var core = await SimHarness.NewLoggedInCoreAsync();
+
+        var refOf = new CancelKey(SimHarness.Broker, "nobody", 1, 1, "000000000001", SimHarness.Exchange);
+        var ex = Assert.Throws<ExchangeBusinessException>(() => core.CancelOrder("nobody", refOf));
+        Assert.Equal(SimErrorCodes.NotLoggedIn, ex.ErrorId);
+    }
+
+    [Fact]
+    public async Task 时段闸门只在显式开启时生效()
+    {
+        // 默认（RejectOrdersOutsideTradingTime = false）：任意时刻都能下单——离线沙盒要的就是这个
+        var lenient = await SimHarness.NewLoggedInCoreAsync(
+            now: new DateTime(2026, 9, 26, 3, 0, 0)); // 周六凌晨
+        Assert.NotNull(lenient.InsertOrder(SimHarness.Account,
+            SimHarness.Market(Direction.Buy, 1)));
+
+        // 开启闸门：同一时刻被拒（seedMaker 关——闸门开着 maker 种子单也会被拒；用限价单——
+        // 市价单会先撞空簿的 NoCounterparty 90016，到不了时段闸门）
+        var strict = await SimHarness.NewLoggedInCoreAsync(
+            SimHarness.Options() with { RejectOrdersOutsideTradingTime = true },
+            seedMaker: false,
+            now: new DateTime(2026, 9, 26, 3, 0, 0));
+        RejectedWith(strict, SimHarness.Limit(Direction.Buy, 1, 6900), SimErrorCodes.NotTradingTime);
+    }
+}

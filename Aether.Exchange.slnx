@@ -2,4 +2,5 @@
   <Project Path="src/Aether.Exchange/Aether.Exchange.csproj" />
   <Project Path="src/Aether.Exchange.Storage/Aether.Exchange.Storage.csproj" />
   <Project Path="src/Aether.Exchange.Rpc/Aether.Exchange.Rpc.csproj" />
+  <Project Path="tests/Aether.Exchange.Tests/Aether.Exchange.Tests.csproj" />
 </Solution>

@@ -26,6 +26,16 @@ CTP 本地仿真交易所——撮合核心（订单簿价格发现归簿 + 成�
 - **事件在锁外触发**：回调可能重入核心（客户端在回调里立刻下单是合法用法），持锁触发会自死锁
 - **前置从不直连撮合**：前置只做线协议转译（真实世界拓扑镜像：一个交易所 + N 券商前置）
 
+## 构建与测试
+
+```bash
+dotnet test Aether.Exchange.slnx    # tests/Aether.Exchange.Tests：138 例（撮合/订单生命周期/会计不变量/费用/风控/认证/持久化/RPC wire）
+```
+
+测试**同仓自持**（只引 src 三项目，不依赖兄弟仓）——CI 无须 checkout 兄弟仓即可全量跑。
+协议侧接缝（RemoteCtpSession/ICtpSession 契约）的测试在 ctp-net-front/tests（适配器属彼仓）。
+落盘用例经宿主同款接线显式注入 `SimStore.ForFile`（核心默认 NullSimStore 不落盘——宿主语义见 Exchange.Host）。
+
 ## 来历
 
 2026-10-19 拆自 Aether monorepo `business/CtpExchange/`（Acme.Ctp.Sim / Simulator / Sim.Server 三项目吸收合并）；2026-10-20 全仓改名 `Acme.Ctp.Sim → Aether.Exchange.Rpc`、撤单参数 `CtpOrderRef → CancelKey`。完整决策记录见工作区根 `MIGRATION.md`。
