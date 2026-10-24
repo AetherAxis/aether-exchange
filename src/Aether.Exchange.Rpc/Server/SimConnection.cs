@@ -180,6 +180,10 @@ internal sealed class SimConnection
                     result = _core.QueryOrders(BoundAccount(), Arg<InstrumentArg>(req)?.InstrumentId);
                     break;
 
+                case SimOps.QueryTrades:
+                    result = _core.QueryTrades(BoundAccount(), Arg<InstrumentArg>(req)?.InstrumentId);
+                    break;
+
                 case SimOps.QueryInstruments:
                     // 上市表是交易所全局的（非账户过滤）；服务端把 Simulator 类型映射为客户端安全的 Domain DTO
                     result = _core.QueryListedInstruments().Select(i => new Instrument

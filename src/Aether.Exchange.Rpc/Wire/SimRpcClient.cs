@@ -213,6 +213,11 @@ public sealed class SimRpcClient : IDisposable
         => await NonNullAsync<List<Order>>(SimOps.QueryOrders, new InstrumentArg(instrumentId), ct)
            .ConfigureAwait(false);
 
+    /// <summary>查询成交（可选按合约过滤）——查成交 <c>ReqQryTrade</c> 的数据源。</summary>
+    public async Task<IReadOnlyList<Trade>> QueryTradesAsync(string? instrumentId, CancellationToken ct = default)
+        => await NonNullAsync<List<Trade>>(SimOps.QueryTrades, new InstrumentArg(instrumentId), ct)
+           .ConfigureAwait(false);
+
     /// <summary>查询 host 上市合约表（「行情随柜台」的行情板数据源；无登录守卫——与其它查询一致）。</summary>
     /// <summary>
     /// 提币（批 4 接线；批 6 双资产）：须先 <see cref="LoginAsync"/> 绑定账户（绑定账户即出金账户）——

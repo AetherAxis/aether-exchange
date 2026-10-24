@@ -25,6 +25,10 @@ public sealed class SimAccountState
     public SimPositionManager Positions { get; } = new();
     public SimOrderManager Orders { get; } = new();
 
+    /// <summary>成交流水（2026-10-24：查成交 <c>ReqQryTrade</c> 的数据源——与 <see cref="Orders"/> 同口径，
+    /// 只活在 host 进程内存里、不落盘：重启后当日成交查不到（单仿真工具可接受，DESIGN 记录边界）。</summary>
+    public List<Trade> Trades { get; } = new();
+
     /// <summary>下一个报单序号（登录时回给客户端作 <c>MaxOrderRef</c>）。</summary>
     internal int NextOrderRefSeq { get; set; }
 }
@@ -431,6 +435,20 @@ public sealed class SimTradingCore : IDisposable
             var all = state.Orders.All.Select(e => e.Order);
             if (!string.IsNullOrWhiteSpace(instrumentId))
                 all = all.Where(o => string.Equals(o.InstrumentId, instrumentId, StringComparison.OrdinalIgnoreCase));
+            return all.ToList();
+        }
+    }
+
+    /// <summary>查询成交（可选按合约过滤）——查成交 <c>ReqQryTrade</c> 的数据源。</summary>
+    public IReadOnlyList<Trade> QueryTrades(string accountId, string? instrumentId = null)
+    {
+        lock (_gate)
+        {
+            var state = Find(accountId);
+            if (state is null) return Array.Empty<Trade>();
+            var all = state.Trades.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(instrumentId))
+                all = all.Where(t => string.Equals(t.InstrumentId, instrumentId, StringComparison.OrdinalIgnoreCase));
             return all.ToList();
         }
     }
@@ -955,10 +973,15 @@ public sealed class SimTradingCore : IDisposable
     }
 
     /// <summary>成交记账：开仓把冻结转占用、平仓按比例释放占用并结转盈亏。调用方须持锁。</summary>
-    private static void ApplyFillAccounting(SimAccountState state, SimInstrument instrument, SimOrderUpdate u)
+    private void ApplyFillAccounting(SimAccountState state, SimInstrument instrument, SimOrderUpdate u)
     {
         var trade = u.Trade!;
         var account = state.Account;
+        state.Trades.Add(trade with
+        {
+            ExchangeId = instrument.ExchangeId,
+            TradeDate = _clock.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture),
+        });   // 查成交记录带交易所/成交日期（日历日，夜盘与交易日不同）
 
         if (SimRiskEngine.IsClose(trade.OffsetFlag))
         {

@@ -71,6 +71,10 @@ public sealed record Trade
     public double Price { get; init; }
     public int Volume { get; init; }
     public string TradeTime { get; init; } = "";
+    /// <summary>交易所代码（2026-10-24：查成交记录的 CTP 字段面带交易所；成交生成时由合约元数据补）。</summary>
+    public string ExchangeId { get; init; } = "";
+    /// <summary>成交日期 yyyyMMdd（日历日——夜盘与交易日不同；成交生成时由时钟补）。</summary>
+    public string TradeDate { get; init; } = "";
 }
 
 /// <summary>Tick 行情。</summary>

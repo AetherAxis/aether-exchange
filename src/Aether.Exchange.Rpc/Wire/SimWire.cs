@@ -48,6 +48,7 @@ public static class SimOps
     public const string QueryAccount = "queryAccount";
     public const string QueryPositions = "queryPositions";
     public const string QueryOrders = "queryOrders";
+    public const string QueryTrades = "queryTrades";
     /// <summary>查询 host 上市合约表（返回 <see cref="Instrument"/> 列表——行情板的「我就是交易所」数据源）。</summary>
     public const string QueryInstruments = "queryInstruments";
     /// <summary>行情快照/时钟（2026-10-05 进程分离：前置行情腿的订阅快照 + TradingDay/TimeOfDay 来源——

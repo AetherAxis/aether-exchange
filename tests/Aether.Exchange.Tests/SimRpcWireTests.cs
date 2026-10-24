@@ -40,6 +40,7 @@ public class SimRpcWireTests
         Assert.Equal(SimHarness.InitialBalance, account.Balance, 2);
         Assert.Empty(await client.QueryPositionsAsync(null));
         Assert.Empty(await client.QueryOrdersAsync(null));
+        Assert.Empty(await client.QueryTradesAsync(null));
 
         // 下单（fire-and-forget 语义：应答只带 OrderRef/RequestId）
         var inserted = await client.InsertOrderAsync(SimHarness.Market(Direction.Buy, 1));
@@ -51,6 +52,16 @@ public class SimRpcWireTests
         var order = Assert.Single(orders);
         Assert.Equal(1, order.VolumeTraded);
         Assert.Single(await client.QueryPositionsAsync(SimHarness.Instrument));
+
+        // 成交流水（2026-10-24：查成交 ReqQryTrade 的数据源）——一笔成交、带交易所、可按合约过滤
+        var trades = await client.QueryTradesAsync(null);
+        var trade = Assert.Single(trades);
+        Assert.Equal(order.OrderRef, trade.OrderRef);
+        Assert.Equal(SimHarness.Instrument, trade.InstrumentId);
+        Assert.Equal(SimHarness.Exchange, trade.ExchangeId);
+        Assert.Equal(1, trade.Volume);
+        Assert.Single(await client.QueryTradesAsync(SimHarness.Instrument));
+        Assert.Empty(await client.QueryTradesAsync("ax001"));
 
         // 撤单定位失败 → 业务异常（ErrorId 原样跨线）
         var bogus = new CancelKey(SimHarness.Broker, SimHarness.Account, 1, 1, "999999999999", SimHarness.Exchange);
