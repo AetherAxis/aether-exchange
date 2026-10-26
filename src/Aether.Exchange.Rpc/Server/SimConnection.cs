@@ -189,6 +189,7 @@ internal sealed class SimConnection
                     result = _core.QueryListedInstruments().Select(i => new Instrument
                     {
                         InstrumentId = i.InstrumentId,
+                        Name = i.Name,
                         ExchangeId = i.ExchangeId,
                         VolumeMultiple = i.VolumeMultiple,
                         PriceTick = i.PriceTick,

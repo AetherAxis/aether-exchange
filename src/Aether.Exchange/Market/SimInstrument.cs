@@ -16,6 +16,11 @@ public sealed record SimInstrument
     /// <summary>合约代码，如 <c>ag2610</c>。</summary>
     public required string InstrumentId { get; init; }
 
+    /// <summary>合约中文名（2026-10-26 服务端合约名称——**只给自有品种配**，源在 <see cref="InstrumentCatalog"/>
+    /// 品种表：ax → Aether币价期货；真实品种不由仿真臆造名，保持空。老库加载出的无名合约经
+    /// <see cref="InstrumentCatalog.WithBackfilledName"/> 兜底补名。空 = 无名（显示层自便））。</summary>
+    public string Name { get; init; } = "";
+
     /// <summary>交易所代码，如 <c>SHFE</c>（进 <c>Position.ExchangeId</c> / 撤单定位键）。</summary>
     public required string ExchangeId { get; init; }
 

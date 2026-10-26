@@ -136,7 +136,15 @@ public sealed class SimTradingCore : IDisposable
         var instruments = await _store.LoadInstrumentsAsync(ct).ConfigureAwait(false);
         lock (_gate)
         {
-            foreach (var i in instruments) _instruments[i.InstrumentId] = i;
+            // 老库兜底补名（2026-10-26 Name 字段之前的持久化合约读出来为空）：按品种派生中文名并回写。
+            // 全新库走下面的种子路径（种子自带名）；派生不出的（合成合约）保持无名。
+            foreach (var i in instruments)
+            {
+                var named = InstrumentCatalog.WithBackfilledName(i);
+                if (!ReferenceEquals(named, i))
+                    Persist(() => _store.SaveInstrumentAsync(named));
+                _instruments[named.InstrumentId] = named;
+            }
 
             if (_instruments.Count == 0)
             {

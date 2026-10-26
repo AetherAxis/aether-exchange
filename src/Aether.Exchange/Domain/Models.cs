@@ -105,6 +105,8 @@ public sealed record Tick
 public sealed record Instrument
 {
     public string InstrumentId { get; init; } = "";
+    /// <summary>合约中文名（2026-10-26 起服务端携带——源在 InstrumentCatalog 品种表；空 = 无名）。</summary>
+    public string Name { get; init; } = "";
     public string ExchangeId { get; init; } = "";
     public double VolumeMultiple { get; init; }
     public double PriceTick { get; init; }

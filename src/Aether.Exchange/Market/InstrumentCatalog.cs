@@ -37,6 +37,10 @@ public static class InstrumentCatalog
     /// <c>zx</c> / <c>ax</c> 是本交易所自有品种（「我就是交易所」的自定义面）：真实期货品种
     /// 直接按交易所标准元数据；交易所自定义品种（BTC 对标 / Aether 币价）经派生链落表。
     /// </para>
+    /// <para>
+    /// <see cref="SimInstrument.Name"/> 中文名**只给自有品种配**（2026-10-26 用户定调「种子只需要
+    /// 真实的那个，别瞎加东西」——真实品种的中文名不由仿真臆造，保持无名）：ax → Aether币价期货。
+    /// </para>
     /// </summary>
     private static readonly Dictionary<string, SimInstrument> Varieties = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -48,7 +52,8 @@ public static class InstrumentCatalog
         // 计价币 AQ（像股票/期货账户充钱）；coin 不进交易所（充币铸造/提币烧毁通道已拆除），场内头寸全部纸面。
         // 1 手 = 1 币名义；基价 100（冷启动记价基准，运行后订单簿价格发现）。maker/taker 费率镜像 zx
         // （BTC 对标）。PriceTick=0.01（精细报价——币价应该能分到分级精度）。
-        ["ax"] = new SimInstrument { InstrumentId = "ax", ExchangeId = "AETHER", VolumeMultiple = 1, MarginRate = 0.10, PriceTick = 0.01, BasePrice = 100, PreSettlement = 100, IsSpot = true, MakerCommissionRate = 0.0002, TakerCommissionRate = 0.0005 },
+        // Name：Aether币价期货——ax 家族共用一个显示名（001 是序列号不是月份，不拼后缀）。
+        ["ax"] = new SimInstrument { InstrumentId = "ax", Name = "Aether币价期货", ExchangeId = "AETHER", VolumeMultiple = 1, MarginRate = 0.10, PriceTick = 0.01, BasePrice = 100, PreSettlement = 100, IsSpot = true, MakerCommissionRate = 0.0002, TakerCommissionRate = 0.0005 },
         ["ag"] = new SimInstrument { InstrumentId = "ag", ExchangeId = "SHFE", VolumeMultiple = 15, MarginRate = 0.12, PriceTick = 1, BasePrice = 7000, PreSettlement = 6990 },
         ["au"] = new SimInstrument { InstrumentId = "au", ExchangeId = "SHFE", VolumeMultiple = 1000, MarginRate = 0.10, PriceTick = 0.02, BasePrice = 560, PreSettlement = 558 },
         ["cu"] = new SimInstrument { InstrumentId = "cu", ExchangeId = "SHFE", VolumeMultiple = 5, MarginRate = 0.12, PriceTick = 10, BasePrice = 78000, PreSettlement = 77900 },
@@ -60,7 +65,7 @@ public static class InstrumentCatalog
         ["sc"] = new SimInstrument { InstrumentId = "sc", ExchangeId = "INE", VolumeMultiple = 1000, MarginRate = 0.13, PriceTick = 0.1, BasePrice = 560, PreSettlement = 558 },
     };
 
-    /// <summary>带月份的种子合约（默认装载集合）——月份取仓内已在用的示例。</summary>
+    /// <summary>带月份的种子合约（默认装载集合）——月份取仓内已在用的示例。真实品种不配名（见 Varieties 注释）。</summary>
     public static IReadOnlyList<SimInstrument> Seed() => new[]
     {
         With("ag", "ag2610"),
@@ -74,14 +79,8 @@ public static class InstrumentCatalog
         With("sc", "sc2610"),
     };
 
-    private static SimInstrument With(string variety, string instrumentId)
-    {
-        var v = Varieties[variety];
-        return v with { InstrumentId = instrumentId };
-    }
-
     /// <summary>
-    /// 查不到精确合约时按品种派生一个（<c>ag2602</c> → 用 <c>ag</c> 的元数据）。
+    /// 查不到精确合约时按品种派生一个（<c>ag2602</c> → 用 <c>ag</c> 的元数据；ax001 → ax 的元数据 + 名）。
     /// 都不认识 → 返回 null，由调用方决定拒绝还是兜底合成。
     /// </summary>
     public static SimInstrument? DeriveByVariety(string instrumentId, IReadOnlyDictionary<string, SimInstrument> known)
@@ -91,7 +90,7 @@ public static class InstrumentCatalog
         return Varieties.TryGetValue(variety, out var v) ? v with { InstrumentId = instrumentId } : null;
     }
 
-    /// <summary>完全不认识的合约：用下单价合成一个能撮合的最小合约（严格模式下不走这里）。</summary>
+    /// <summary>完全不认识的合约：用下单价合成一个能撮合的最小合约（严格模式下不走这里）。无名。</summary>
     public static SimInstrument Synthesize(string instrumentId, double referencePrice)
     {
         var price = referencePrice > 0 ? referencePrice : 100;
@@ -106,5 +105,24 @@ public static class InstrumentCatalog
             BasePrice = price,
             PreSettlement = price,
         };
+    }
+
+    /// <summary>
+    /// 老库兜底补名（2026-10-26 加 Name 字段前的持久化合约读出来 Name 为空）：品种表里有名的（ax 家族）
+    /// 按品种名补，其余保持无名。幂等——已有名的原样返回。
+    /// </summary>
+    public static SimInstrument WithBackfilledName(SimInstrument instrument)
+    {
+        if (instrument.Name.Length > 0) return instrument;
+        var variety = VarietyOf(instrument.InstrumentId);
+        return Varieties.TryGetValue(variety, out var v) && v.Name.Length > 0
+            ? instrument with { Name = v.Name }
+            : instrument;
+    }
+
+    private static SimInstrument With(string variety, string instrumentId)
+    {
+        var v = Varieties[variety];
+        return v with { InstrumentId = instrumentId };
     }
 }

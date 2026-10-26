@@ -99,3 +99,12 @@ CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主�
 - **CI 覆盖率留档**：Test 步加 `--collect:"XPlat Code Coverage"` + `upload-artifact`（撮合/会计不变量是回归重灾区，需要有基线）。
 
 **未做（有意）**：§6 的撮合重启语义文档化（要先把「重启后订单簿/挂单如何恢复」定成产品口径，不宜由升级顺手定义）。
+
+## 升级补记（2026-10-26）：合约中文名（SimInstrument.Name）
+
+用户定调「服务端加合约名称，ax001 加中文名」+「种子只需要真实的那个，别瞎加东西」——**只给自有
+品种配名**：品种表 ax → `Aether币价期货`（ax 家族共用显示名，001 是序列号不拼后缀）；真实品种
+（ag/au/cu/rb/m/i/ta/IF/sc）保持无名，不由仿真臆造。链路：品种表 → `DeriveByVariety` 派生（ax001
+上市即带名）→ 老库无名合约 `WithBackfilledName` 兜底补名（幂等，启动加载时回写）→ RPC `Instrument.Name`
+（queryInstruments 携带）→ ③ `CtpInstrument.Name`（⑤ mapper 透传；wire 查合约名称槽未逆向属
+⑤ follow-up）。测试 +4（派生带名/真实无名/兜底幂等/种子清单不变）。
