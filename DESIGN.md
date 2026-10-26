@@ -108,3 +108,16 @@ CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主�
 上市即带名）→ 老库无名合约 `WithBackfilledName` 兜底补名（幂等，启动加载时回写）→ RPC `Instrument.Name`
 （queryInstruments 携带）→ ③ `CtpInstrument.Name`（⑤ mapper 透传；wire 查合约名称槽未逆向属
 ⑤ follow-up）。测试 +4（派生带名/真实无名/兜底幂等/种子清单不变）。
+
+### 升级补记（2026-10-26 二次收敛）：品种表只留 ax
+
+用户定调「不要乱七八糟的品种，只一个」——`Varieties` 表删除 zx/ag/au/cu/rb/m/i/ta/IF/sc 全部示例品种，
+**只保留 ax**；`Seed()` 只种 ax001（带名）。配套：
+
+- **`RegisterVariety` 扩展口**：品种表的注册 API（host 上架自定义产品 / 测试夹具注入用）——生产表
+  不预置任何测试品种。
+- **测试夹具自带品种**：④/⑤ 测试程序集各带 ModuleInitializer（`TestVarietyInit`）注册 ag（×15/12%/
+  tick1/SHFE/7000/6990）与 zx（④ 内 PostOnly/MakerTaker 用）——值 = 被移除前的品种表原值，
+  全部数值断言零改动（142/142 与 ⑤ 全量回归验证）。
+- 老 DB 里已持久化的示例合约（服务器库的 ag2610 等）不受影响：启动加载原样进表（无名），上市表
+  默认只有 ax001——它们只是躺在合约表里的惰性行。

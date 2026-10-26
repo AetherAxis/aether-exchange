@@ -45,12 +45,13 @@ public class InstrumentNameTests
     }
 
     [Fact]
-    public void 种子清单不变且无名()
+    public void 种子清单只种真实的那个且带名()
     {
         var seed = InstrumentCatalog.Seed();
 
-        Assert.Equal(new[] { "ag2610", "au2612", "cu2610", "rb2610", "m2701", "i2701", "ta2610", "IF2610", "sc2610" },
-            seed.Select(i => i.InstrumentId));
-        Assert.All(seed, i => Assert.Equal("", i.Name));
+        var only = Assert.Single(seed);
+        Assert.Equal("ax001", only.InstrumentId);
+        Assert.Equal("Aether币价期货", only.Name);
+        Assert.Equal("AETHER", only.ExchangeId);
     }
 }

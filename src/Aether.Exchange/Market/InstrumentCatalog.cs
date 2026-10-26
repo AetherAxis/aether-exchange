@@ -7,8 +7,9 @@ namespace Aether.Exchange;
 /// <summary>
 /// 内置合约表种子 + 「未知合约」的兜底合成。
 /// <para>
-/// 种子只覆盖仓内已在用的品种（<c>ag2610</c> 等，见 <c>CtpBrokerageTradingTests.FakeCtpSession</c> 与期货页默认值），
-/// 乘数/保证金率取近似真实值——仿真的目的不是记账精确到分，而是让保证金冻结、涨跌停、tick 对齐这些**机制**能跑起来。
+/// **生产品种表只带 ax 一个品种**（2026-10-26 用户定调「不要乱七八糟的品种，只一个」）——
+/// 仿真柜台实际只上市 ax001（上市表默认）。需要别的品种（host 上架自定义产品、测试夹具）
+/// 经 <see cref="RegisterVariety"/> 注册，不往生产表里塞。
 /// </para>
 /// </summary>
 public static class InstrumentCatalog
@@ -32,52 +33,31 @@ public static class InstrumentCatalog
 
     /// <summary>
     /// 品种级元数据（不含具体月份）——月份只影响代码，不影响乘数/保证金率/最小变动价位，
-    /// 故未知月份（如用户的真实持仓 <c>ag2602</c>）能按品种自动派生。
+    /// 故未知月份能按品种自动派生（<c>ax001</c> 之外的 ax 合约同样落表）。
     /// <para>
-    /// <c>zx</c> / <c>ax</c> 是本交易所自有品种（「我就是交易所」的自定义面）：真实期货品种
-    /// 直接按交易所标准元数据；交易所自定义品种（BTC 对标 / Aether 币价）经派生链落表。
-    /// </para>
-    /// <para>
-    /// <see cref="SimInstrument.Name"/> 中文名**只给自有品种配**（2026-10-26 用户定调「种子只需要
-    /// 真实的那个，别瞎加东西」——真实品种的中文名不由仿真臆造，保持无名）：ax → Aether币价期货。
+    /// <c>ax</c> = Aether 币价合约（批 4 现货 → 2026-10-10 币通道退役 + 开空解禁后的最终形态）：
+    /// AQ 计价的保证金品种，与期货完全一致（买=开多/卖=开空/双向持仓/10% 保证金=10 倍杠杆）。
+    /// 交易所单资产化——只收付计价币 AQ；coin 不进交易所，场内头寸全部纸面。
+    /// 1 手 = 1 币名义；基价 100（冷启动记价基准，运行后订单簿价格发现）。maker/taker 费率
+    /// BTC 对标（挂 2bp / 吃 5bp）。PriceTick=0.01（币价分级精度）。
+    /// <see cref="SimInstrument.Name"/>：Aether币价期货（2026-10-26 服务端合约中文名）。
     /// </para>
     /// </summary>
     private static readonly Dictionary<string, SimInstrument> Varieties = new(StringComparer.OrdinalIgnoreCase)
     {
-        // zx = BTC 对标品种（2026-10-05 起）：maker/taker 差异化手续费（挂 2bp / 吃 5bp，永续 VIP0 量级）。
-        // 其余真实品种不设 ⇒ 回退单一 CommissionRate（CTP 双边同费形态）。
-        ["zx"] = new SimInstrument { InstrumentId = "zx", ExchangeId = "SIM", VolumeMultiple = 10, MarginRate = 0.10, PriceTick = 1, BasePrice = 3800, PreSettlement = 3798, MakerCommissionRate = 0.0002, TakerCommissionRate = 0.0005 },
-        // ax = Aether 币价合约（批 4 现货 → 2026-10-10 币通道退役 + 开空解禁后的最终形态）：AQ 计价的保证金
-        // 品种，与期货完全一致（买=开多/卖=开空/双向持仓/10% 保证金=10 倍杠杆）。交易所单资产化——只收付
-        // 计价币 AQ（像股票/期货账户充钱）；coin 不进交易所（充币铸造/提币烧毁通道已拆除），场内头寸全部纸面。
-        // 1 手 = 1 币名义；基价 100（冷启动记价基准，运行后订单簿价格发现）。maker/taker 费率镜像 zx
-        // （BTC 对标）。PriceTick=0.01（精细报价——币价应该能分到分级精度）。
-        // Name：Aether币价期货——ax 家族共用一个显示名（001 是序列号不是月份，不拼后缀）。
         ["ax"] = new SimInstrument { InstrumentId = "ax", Name = "Aether币价期货", ExchangeId = "AETHER", VolumeMultiple = 1, MarginRate = 0.10, PriceTick = 0.01, BasePrice = 100, PreSettlement = 100, IsSpot = true, MakerCommissionRate = 0.0002, TakerCommissionRate = 0.0005 },
-        ["ag"] = new SimInstrument { InstrumentId = "ag", ExchangeId = "SHFE", VolumeMultiple = 15, MarginRate = 0.12, PriceTick = 1, BasePrice = 7000, PreSettlement = 6990 },
-        ["au"] = new SimInstrument { InstrumentId = "au", ExchangeId = "SHFE", VolumeMultiple = 1000, MarginRate = 0.10, PriceTick = 0.02, BasePrice = 560, PreSettlement = 558 },
-        ["cu"] = new SimInstrument { InstrumentId = "cu", ExchangeId = "SHFE", VolumeMultiple = 5, MarginRate = 0.12, PriceTick = 10, BasePrice = 78000, PreSettlement = 77900 },
-        ["rb"] = new SimInstrument { InstrumentId = "rb", ExchangeId = "SHFE", VolumeMultiple = 10, MarginRate = 0.10, PriceTick = 1, BasePrice = 3200, PreSettlement = 3198 },
-        ["m"] = new SimInstrument { InstrumentId = "m", ExchangeId = "DCE", VolumeMultiple = 10, MarginRate = 0.08, PriceTick = 1, BasePrice = 3000, PreSettlement = 2998 },
-        ["i"] = new SimInstrument { InstrumentId = "i", ExchangeId = "DCE", VolumeMultiple = 100, MarginRate = 0.13, PriceTick = 0.5, BasePrice = 780, PreSettlement = 778 },
-        ["ta"] = new SimInstrument { InstrumentId = "ta", ExchangeId = "CZCE", VolumeMultiple = 5, MarginRate = 0.09, PriceTick = 2, BasePrice = 5200, PreSettlement = 5190 },
-        ["IF"] = new SimInstrument { InstrumentId = "IF", ExchangeId = "CFFEX", VolumeMultiple = 300, MarginRate = 0.12, PriceTick = 0.2, BasePrice = 3900, PreSettlement = 3890 },
-        ["sc"] = new SimInstrument { InstrumentId = "sc", ExchangeId = "INE", VolumeMultiple = 1000, MarginRate = 0.13, PriceTick = 0.1, BasePrice = 560, PreSettlement = 558 },
     };
 
-    /// <summary>带月份的种子合约（默认装载集合）——月份取仓内已在用的示例。真实品种不配名（见 Varieties 注释）。</summary>
-    public static IReadOnlyList<SimInstrument> Seed() => new[]
-    {
-        With("ag", "ag2610"),
-        With("au", "au2612"),
-        With("cu", "cu2610"),
-        With("rb", "rb2610"),
-        With("m", "m2701"),
-        With("i", "i2701"),
-        With("ta", "ta2610"),
-        With("IF", "IF2610"),
-        With("sc", "sc2610"),
-    };
+    /// <summary>
+    /// 注册自定义品种（品种表的扩展口——host 上架自定义产品 / 测试夹具注入；生产表只带 ax）。
+    /// 键 = 品种前缀（<see cref="SimInstrument.InstrumentId"/>），重复注册覆盖。须在任何核心
+    /// 初始化之前调用（表无锁——设计为启动期一次性注册）。
+    /// </summary>
+    public static void RegisterVariety(SimInstrument variety) =>
+        Varieties[variety.InstrumentId] = variety;
+
+    /// <summary>带月份的种子合约（默认装载集合）——只种真实的那个：ax001。</summary>
+    public static IReadOnlyList<SimInstrument> Seed() => new[] { With("ax", "ax001") };
 
     /// <summary>
     /// 查不到精确合约时按品种派生一个（<c>ag2602</c> → 用 <c>ag</c> 的元数据；ax001 → ax 的元数据 + 名）。
