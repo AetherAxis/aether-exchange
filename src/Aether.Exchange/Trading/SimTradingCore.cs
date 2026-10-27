@@ -635,7 +635,7 @@ public sealed class SimTradingCore : IDisposable
         }
     }
 
-    /// <summary>计价币铸造台账快照（账户 → 已净充入 AQ 原子数）——AQ 侧对账（host LedgerSpotLink）遍历用。线程安全。</summary>
+    /// <summary>计价币铸造台账快照（账户 → 已净充入 AQ 原子数）——AQ 侧对账（host LedgerCashRail）遍历用。线程安全。</summary>
     public IReadOnlyDictionary<string, long> GetQuoteMintedAtoms()
     {
         lock (_gate) return new Dictionary<string, long>(_quoteMinted);
