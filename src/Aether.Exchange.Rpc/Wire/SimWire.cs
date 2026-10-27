@@ -59,7 +59,7 @@ public static class SimOps
     public const string Subscribe = "subscribe";
     public const string Unsubscribe = "unsubscribe";
     /// <summary>提币（批 4 接线，2026-10-08）：须 login 绑定账户——烧毁 venue 现货持仓后 custody 签名链上出金。
-    /// 客户端操作面 = 钱包 CLI（apps/LedgerWallet 的 withdraw 命令）；CTP 线协议无法承载新 op（模板 verbatim 回放）。</summary>
+    /// 客户端操作面 = 钱包 CLI（⑧ aether-apps/Aether.Ledger.Wallet 的 withdraw 命令）；CTP 线协议无法承载新 op（模板 verbatim 回放）。</summary>
     public const string Withdraw = "withdraw";
 }
 
