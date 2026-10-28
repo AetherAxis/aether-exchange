@@ -4,7 +4,7 @@
 
 ## 1. 定位与边界
 
-CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主与组合根在 `../aether-apps/Aether.Exchange.Host`（默认 `127.0.0.1:17800`）。
+CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主与组合根在 `../aether-ctp-hosts/Aether.Exchange.Host`（默认 `127.0.0.1:17800`）。
 
 - 不引 CTP SDK / `Ctp.Net`：Domain 类型自持，协议映射归 `ctp-net-front`。
 - 不引 `Aether.Ledger`：链只进宿主，提币经注入的 `SimWithdrawHandler`。

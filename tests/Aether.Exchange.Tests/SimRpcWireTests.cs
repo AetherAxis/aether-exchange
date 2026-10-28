@@ -126,7 +126,7 @@ public class SimRpcWireTests
 
         var ex = await Assert.ThrowsAsync<ExchangeBusinessException>(() => client.ConnectAsync());
         Assert.Equal(SimWireErrors.NotRunning, ex.ErrorId);
-        Assert.Contains("aether-apps/Aether.Exchange.Host", ex.ErrorMsg);   // 提示里有启动命令，用户照抄即能救
+        Assert.Contains("aether-ctp-hosts/Aether.Exchange.Host", ex.ErrorMsg);   // 提示里有启动命令，用户照抄即能救
     }
 
     [Fact]

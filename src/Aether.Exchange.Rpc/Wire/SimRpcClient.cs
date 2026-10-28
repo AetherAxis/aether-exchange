@@ -94,7 +94,7 @@ public sealed class SimRpcClient : IDisposable
                 if (ct.IsCancellationRequested) throw;   // 调用方主动取消，原样上抛
                 throw new ExchangeBusinessException(SimWireErrors.NotRunning,
                     $"本地仿真柜台未启动（{_host}:{_port} 无法连接）：{ex.Message}。" +
-                    "启动命令：dotnet run --project aether-apps/Aether.Exchange.Host");
+                    "启动命令：dotnet run --project aether-ctp-hosts/Aether.Exchange.Host");
             }
 
             _tcp = tcp;

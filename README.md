@@ -10,7 +10,7 @@ CTP 本地仿真交易所——撮合核心（订单簿价格发现归簿 + 成�
 | `src/Aether.Exchange.Rpc` | 线协议：4 字节小端长度前缀 + UTF-8 JSON 帧（SimFraming）+ 信封与错误码（SimWire，90012-90019）+ 服务端（SimRpcServer）+ 客户端（SimRpcClient） |
 | `src/Aether.Exchange.Storage` | SQLite 落盘（SimStore + SqliteStoreBase/SqliteMigrations）——全部「尽力而为」，落盘失败绝不拒单 |
 
-宿主在 aether-apps 仓：`../aether-apps/Aether.Exchange.Host`（默认 127.0.0.1:17800）。
+宿主在 aether-ctp-hosts 仓：`../aether-ctp-hosts/Aether.Exchange.Host`（默认 127.0.0.1:17800）。
 
 ## 配置（环境变量，全部在 host 进程读）
 
