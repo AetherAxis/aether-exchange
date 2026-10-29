@@ -210,7 +210,7 @@ public class CrossAccountMatchingTests
         var balance = a.Balance - (a.CurrMargin + a.FrozenMargin + a.FrozenCash);
         Assert.True(Math.Abs(balance - a.Available) < 0.05,
             $"{accountId}: Available 恒等式破坏（Balance-CurrMargin-Frozen-Frozen={balance} vs Available={a.Available}）");
-        var staticBalance = SimHarness.InitialBalance - a.Commission + a.CloseProfit;   // StaticBalance = 初始 - 手续费 + 平仓盈亏
+        var staticBalance = SimHarness.SandboxDeposit - a.Commission + a.CloseProfit;   // StaticBalance = 初始 - 手续费 + 平仓盈亏
         Assert.True(Math.Abs(a.Balance - (staticBalance + a.PositionProfit)) < 0.05,
             $"{accountId}: Balance 恒等式破坏（Balance={a.Balance} vs 初始-手续费+平仓盈亏+持仓盈亏={staticBalance + a.PositionProfit}）");
     }

@@ -93,6 +93,7 @@ public class OrderLifecycleTests
     {
         // 部分成交的另一半路径：GFD 限价残量**入簿**（不冻结释放），对手方后续插反向单即补足
         var (core, orders, trades) = await SubscribedAsync(seedMaker: false);
+        SimHarness.Fund(core, SimHarness.MakerAccount);   // seedMaker=false ⇒ 手工补 maker 入金后单侧挂单
         core.InsertOrder(SimHarness.MakerAccount, SimHarness.Limit(Direction.Sell, 1, SimHarness.Ask));
 
         var inserted = core.InsertOrder(SimHarness.Account,
@@ -157,7 +158,7 @@ public class OrderLifecycleTests
         Assert.Equal(0, account.FrozenMargin, 2);
         Assert.Equal(0, account.FrozenCash, 2);
         Assert.Equal(0, account.Commission, 2);
-        Assert.Equal(SimHarness.InitialBalance, account.Balance, 2); // 分文未动
+        Assert.Equal(SimHarness.SandboxDeposit, account.Balance, 2); // 分文未动
         Assert.Empty(core.QueryPositions(SimHarness.Account));
     }
 
@@ -210,8 +211,8 @@ public class OrderLifecycleTests
         var after = core.QueryAccount(SimHarness.Account);
         Assert.Equal(0, after.FrozenMargin, 2);
         Assert.Equal(0, after.FrozenCash, 2);
-        Assert.Equal(SimHarness.InitialBalance, after.Balance, 2); // 撤单不产生任何费用
-        Assert.Equal(SimHarness.InitialBalance, after.Available, 2);
+        Assert.Equal(SimHarness.SandboxDeposit, after.Balance, 2); // 撤单不产生任何费用
+        Assert.Equal(SimHarness.SandboxDeposit, after.Available, 2);
 
         var order = Assert.Single(core.QueryOrders(SimHarness.Account));
         Assert.Equal(inserted.ClientOrderRef, order.OrderRef);

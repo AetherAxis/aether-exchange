@@ -1028,10 +1028,15 @@ public sealed class SimTradingCore : IDisposable
 
     // —— 内部：状态与工具 ——
 
+    /// <summary>
+    /// 首次出现即在册（「首次登录 = 开户」），<b>余额恒为 0</b>：场内现金只能由
+    /// <see cref="CreditQuoteDeposit"/>（链上 AQ 真实转账的对账入账）增加——
+    /// 2026-10-29 删除「开户赠金」后，这里不再读任何选项/环境变量。
+    /// </summary>
     private SimAccountState GetOrCreate(string accountId)
     {
         if (_states.TryGetValue(accountId, out var state)) return state;
-        state = new SimAccountState(new SimAccount(accountId, _options.InitialBalance));
+        state = new SimAccountState(new SimAccount(accountId, 0));
         _states[accountId] = state;
         return state;
     }

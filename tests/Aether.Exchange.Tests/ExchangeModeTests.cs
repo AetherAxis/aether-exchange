@@ -57,6 +57,7 @@ public class ExchangeModeTests
             var options = SimHarness.Options() with { DatabasePath = db };
             var core = new SimTradingCore(options, store: SimStore.ForFile(db));
             await core.InitializeAsync();
+            SimHarness.FundSandbox(core);   // 开户余额恒 0 ⇒ 手工建核的用例显式入金（链上充值替身）
             core.ActivateMarket(SimHarness.Instrument);
             core.InsertOrder("alice", SimHarness.Limit(Direction.Sell, 2, 6992));   // 对手挂单（做市商角色——外部客户端语义）
             core.InsertOrder("bob", SimHarness.Market(Direction.Buy, 2));           // 成交 @6992 ×2

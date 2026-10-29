@@ -108,39 +108,41 @@ public class RoutingSessionTests
     }
 
     [Fact]
-    public void 仿真选项从环境变量读取覆盖值()
+    public async Task 开户余额恒零_资金只能由链上充值进入()
     {
-        // host 侧语义（AETHER_CTP_SIM_BALANCE/BOARD 全部由 host 进程读取）
-        var names = new[] { "AETHER_CTP_SIM_BALANCE" };
-        var saved = names.Select(Environment.GetEnvironmentVariable).ToArray();
+        // 2026-10-29：**「开户赠金」已从平台删除**（SimOptions.InitialBalance / AETHER_CTP_SIM_BALANCE 双双移除）。
+        // 资金唯一来源 = 链上 AQ 真实转账（LedgerCashRail 对账 → CreditQuoteDeposit）。
+        // 这里把「旧开关」显式设上再开户，验证它不再有任何影响力。
+        var saved = Environment.GetEnvironmentVariable("AETHER_CTP_SIM_BALANCE");
         try
         {
             Environment.SetEnvironmentVariable("AETHER_CTP_SIM_BALANCE", "500000");
 
             var options = SimOptions.FromEnvironment("/tmp/ctp-sim.db");
-
             Assert.Equal("/tmp/ctp-sim.db", options.DatabasePath);
-            Assert.Equal(500_000, options.InitialBalance, 6);
+
+            using var core = new SimTradingCore(options, new SimClock(() => SimHarness.TradingNow));
+            await core.InitializeAsync();
+            Assert.Equal(0, core.QueryAccount("brandnew").Balance, 6);   // 新账户 = 0，环境变量无效
+
+            SimHarness.Fund(core, "brandnew", 7);                        // 唯一增资通道 = 充值入账（1 AQ = 1 现金）
+            Assert.Equal(7, core.QueryAccount("brandnew").Balance, 6);
         }
         finally
         {
-            for (var i = 0; i < names.Length; i++)
-                Environment.SetEnvironmentVariable(names[i], saved[i]);
+            Environment.SetEnvironmentVariable("AETHER_CTP_SIM_BALANCE", saved);
         }
     }
 
     [Fact]
     public void 环境变量缺省时取内置默认值()
     {
-        foreach (var name in new[] { "AETHER_CTP_SIM_BALANCE", "AETHER_CTP_SIM_BOARD" })
+        foreach (var name in new[] { "AETHER_CTP_SIM_BOARD" })
             Environment.SetEnvironmentVariable(name, null);
 
         var options = SimOptions.FromEnvironment(null);
 
         Assert.Null(options.DatabasePath);
-        Assert.Equal(0, options.InitialBalance, 6);   // 比特币模型（2026-10-08）：水龙头默认关——资金只能从卖币进来
-        Environment.SetEnvironmentVariable("AETHER_CTP_SIM_BALANCE", "500000");
-        Assert.Equal(500_000, SimOptions.FromEnvironment(null).InitialBalance, 6);   // 显式开闸（纯期货开发沙盒）
         Assert.Null(options.ListedInstruments);   // 上市表空 ⇒ 核心 InitializeAsync 回落默认 ax001
     }
 

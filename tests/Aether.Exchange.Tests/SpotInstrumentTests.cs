@@ -16,7 +16,7 @@ public class SpotInstrumentTests
     private static async Task<SimTradingCore> NewCoreAsync()
     {
         var core = new SimTradingCore(
-            new SimOptions { DatabasePath = null, ListedInstruments = new[] { Instrument }, InitialBalance = 0 },
+            new SimOptions { DatabasePath = null, ListedInstruments = new[] { Instrument } },
             new SimClock(() => SimHarness.TradingNow));
         await core.InitializeAsync();
         return core;

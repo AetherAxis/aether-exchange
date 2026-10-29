@@ -15,9 +15,12 @@ public class PostOnlyTests
     private static async Task<SimTradingCore> NewCoreAsync()
     {
         var core = new SimTradingCore(
-            new SimOptions { DatabasePath = null, ListedInstruments = new[] { Instrument }, InitialBalance = 1_000_000 },
+            new SimOptions { DatabasePath = null, ListedInstruments = new[] { Instrument } },
             new SimClock(() => SimHarness.TradingNow));
         await core.InitializeAsync();
+        // 开户余额恒 0 ⇒ 参与者与 maker 先显式入金（链上充值替身；平台没有赠金）
+        SimHarness.FundSandbox(core);
+        SimHarness.Fund(core, "maker");
         core.InsertOrder("maker", SimHarness.Limit(Direction.Buy, 30, Bid, instrument: Instrument));
         core.InsertOrder("maker", SimHarness.Limit(Direction.Sell, 30, Ask, instrument: Instrument));
         return core;
@@ -57,7 +60,7 @@ public class PostOnlyTests
         Assert.Empty(core.QueryOrders("x"));
         var acct = core.QueryAccount("x");
         Assert.Equal(0, acct.FrozenCash, 6);
-        Assert.Equal(SimHarness.InitialBalance, acct.Available, 6);
+        Assert.Equal(SimHarness.SandboxDeposit, acct.Available, 6);
     }
 
     [Fact]

@@ -38,7 +38,12 @@ internal static class SimHarness
     public const double MarginRate = 0.12;
     public const double CommissionRate = 0.00005;
 
-    public const double InitialBalance = 1_000_000;
+    /// <summary>
+    /// 沙盒入金量：测试侧**显式充值**（<see cref="Fund"/>）的默认数额。
+    /// 平台没有「开户赠金」——新账户余额恒 0，场内现金只能由 <c>CreditQuoteDeposit</c> 进来，
+    /// 这里就是那笔「链上 AQ 真实转账」在测试里的替身。
+    /// </summary>
+    public const double SandboxDeposit = 1_000_000;
 
     /// <summary>测试登录密码（密码必填——2026-09-28 起 `Login` 无密码一律拒 90017）。</summary>
     public const string TestPassword = "test-pw";
@@ -49,17 +54,55 @@ internal static class SimHarness
     /// <summary>maker 双边挂单的每侧手数（30×2 手 × 单手保证金 ≈ 75.6 万 < 初始 100 万——双边同时冻结须留足余量）。</summary>
     public const int MakerVolume = 30;
 
-    /// <summary>默认参数：不落盘 + ag2610 上架（上市闸门恒生效——测试合约必须在上市表内）+
-    /// 显式沙盒水龙头 1e6（平台默认已改 0——比特币模型；期货沙盒语义留在测试侧显式声明）。</summary>
-    public static SimOptions Options() => new() { DatabasePath = null, ListedInstruments = new[] { Instrument }, InitialBalance = InitialBalance };
+    /// <summary>默认参数：不落盘 + ag2610 上架（上市闸门恒生效——测试合约必须在上市表内）。
+    /// 资金不在这里给：<see cref="NewCoreAsync"/> 用 <see cref="Fund"/> 显式入金。</summary>
+    public static SimOptions Options() => new() { DatabasePath = null, ListedInstruments = new[] { Instrument } };
 
+    /// <summary>每个 core 上已入过金的账户（<see cref="Fund"/> 幂等：重复调用是空操作）。</summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SimTradingCore, HashSet<string>> Funded = new();
+
+    /// <summary>
+    /// 入金（<c>CreditQuoteDeposit</c> = 平台唯一入金通道，1 AQ = 1 现金）：测试用它替身「链上 AQ 真实转账」。
+    /// 同一 core 上同一账户只入一次——要追加资金直接调 <c>CreditQuoteDeposit</c>（那是另一笔转账）。
+    /// </summary>
+    public static void Fund(SimTradingCore core, string accountId, double tokens = SandboxDeposit)
+    {
+        var funded = Funded.GetOrCreateValue(core);
+        if (!funded.Add(accountId)) return;
+        core.CreditQuoteDeposit(accountId, (ulong)(tokens * SimTradingCore.QuoteAtomsPerToken));
+    }
+
+    /// <summary>
+    /// 本套件里作为参与者下单的沙盒账户（每个 = 一笔显式充值；<see cref="SeedMaker"/> 与
+    /// <see cref="Account"/> 另行入金）。刻意**不含**：<c>legacy</c>（旧库价值由 store 快照注入）、
+    /// <c>nobody</c>（未开户断言余额 0）。
+    /// </summary>
+    public static readonly string[] SandboxAccounts =
+        ["alice", "bob", "carol", "dave", "erin", "noise", "po", "rest", "t", "hit", "x", "self"];
+
+    /// <summary>给沙盒参与者全体入金（等价「每个参与者各转一笔 AQ 进来」）。</summary>
+    public static void FundSandbox(SimTradingCore core, double tokens = SandboxDeposit)
+    {
+        Fund(core, Account, tokens);
+        foreach (var account in SandboxAccounts) Fund(core, account, tokens);
+    }
+
+    /// <param name="fundSandbox">给 <see cref="SandboxAccounts"/> 全体入金（认证类用例传 false——
+    /// 它们要钉的正是「首登开户 = 0 余额」）。</param>
     public static async Task<SimTradingCore> NewCoreAsync(
         SimOptions? options = null,
         bool seedMaker = true,
-        DateTime? now = null)
+        DateTime? now = null,
+        bool fundSandbox = true)
     {
         var core = new SimTradingCore(options ?? Options(), new SimClock(() => now ?? TradingNow));
         await core.InitializeAsync();
+        // 开户余额恒 0（平台没有赠金）⇒ 需要下单的账户先显式入金。
+        if (fundSandbox)
+        {
+            FundSandbox(core);
+            Fund(core, MakerAccount);   // maker 是流动性来源（seedMaker=false 的用例也会单侧引用它）
+        }
         if (seedMaker) SeedMaker(core);
         return core;
     }
@@ -67,6 +110,7 @@ internal static class SimHarness
     /// <summary>maker 账户双边挂单（买 <see cref="Bid"/> × volumePerSide / 卖 <see cref="Ask"/> × volumePerSide）——「盘口注入」的簿版替身。</summary>
     public static void SeedMaker(SimTradingCore core, int volumePerSide = MakerVolume)
     {
+        Fund(core, MakerAccount);   // 双边挂单要冻结保证金（开户余额恒 0 ⇒ 先入金，等价「maker 自己的 AQ 转账」）
         core.InsertOrder(MakerAccount, Limit(Direction.Buy, volumePerSide, Bid));
         core.InsertOrder(MakerAccount, Limit(Direction.Sell, volumePerSide, Ask));
     }
@@ -74,9 +118,9 @@ internal static class SimHarness
     public static ExchangeLoginResult Login(SimTradingCore core) => core.Login(Broker, Account, TestPassword);
 
     /// <summary>已登录核心（绝大多数用例的起点；seedMaker 决定是否注入双边流动性）。</summary>
-    public static async Task<SimTradingCore> NewLoggedInCoreAsync(SimOptions? options = null, bool seedMaker = true, DateTime? now = null)
+    public static async Task<SimTradingCore> NewLoggedInCoreAsync(SimOptions? options = null, bool seedMaker = true, DateTime? now = null, bool fundSandbox = true)
     {
-        var core = await NewCoreAsync(options, seedMaker, now);
+        var core = await NewCoreAsync(options, seedMaker, now, fundSandbox);
         Login(core);
         return core;
     }
@@ -193,7 +237,12 @@ internal sealed class LoopbackSim : IDisposable
         var store = string.IsNullOrWhiteSpace(options.DatabasePath) ? null : SimStore.ForFile(options.DatabasePath);
         var core = new SimTradingCore(options, store: store);
         core.InitializeAsync().GetAwaiter().GetResult();   // xunit 无同步上下文 ⇒ sync-over-async 安全
-        if (seedMaker) SimHarness.SeedMaker(core);
+        SimHarness.FundSandbox(core);                       // 开户余额恒 0 ⇒ 显式入金（链上充值替身）
+        if (seedMaker)
+        {
+            SimHarness.Fund(core, SimHarness.MakerAccount);
+            SimHarness.SeedMaker(core);
+        }
         var server = new SimRpcServer(core, "127.0.0.1", 0);
         server.Start();
         return new LoopbackSim(core, server);

@@ -23,12 +23,13 @@ public class PersistenceTests
 
     /// <summary>落盘到指定文件 + ag2610 上架 + maker 双边挂单（撮合价可预期）。</summary>
     private static SimOptions OptionsFor(string dbPath)
-        => new() { DatabasePath = dbPath, ListedInstruments = new[] { SimHarness.Instrument }, InitialBalance = SimHarness.InitialBalance };
+        => new() { DatabasePath = dbPath, ListedInstruments = new[] { SimHarness.Instrument },  };
 
     private static async Task<SimTradingCore> OpenCoreAsync(string dbPath)
     {
         var core = new SimTradingCore(OptionsFor(dbPath), new SimClock(() => SimHarness.TradingNow), store: SimStore.ForFile(dbPath));
         await core.InitializeAsync();
+        SimHarness.FundSandbox(core);   // 开户余额恒 0 ⇒ 手工建核的用例显式入金（链上充值替身）
         SimHarness.SeedMaker(core);   // 重启后挂单不复活 ⇒ 每次开核都补双边流动性
         SimHarness.Login(core);
         return core;

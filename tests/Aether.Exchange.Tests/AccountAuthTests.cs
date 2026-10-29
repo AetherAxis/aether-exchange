@@ -24,7 +24,8 @@ public class AccountAuthTests
     };
 
     private static async Task<SimTradingCore> NewAuthCoreAsync(SimOptions? options = null)
-        => await SimHarness.NewCoreAsync(options ?? AuthOptions(), seedMaker: false);   // 认证用例不下单——无须流动性
+        // 认证用例不下单 ⇒ 不给流动性、也不给沙盒入金（它们要钉的正是「首登开户 = 0 余额」）
+        => await SimHarness.NewCoreAsync(options ?? AuthOptions(), seedMaker: false, fundSandbox: false);
 
     [Fact]
     public async Task 首次登录带密码即开户设密()
@@ -81,7 +82,7 @@ public class AccountAuthTests
 
             core.Login("9999", "legacy", "new-pw");   // 带密首登 = 补设（迁移路径）
             Assert.True(core.QueryAccounts().Single(a => a.AccountId == "legacy").HasPassword);
-            Assert.Equal(500_000, core.QueryAccount("legacy").Balance, 6);   // 余额是原值，不是 InitialBalance
+            Assert.Equal(500_000, core.QueryAccount("legacy").Balance, 6);   // 余额是库里原值（开户赠金已删除，不存在任何补发）
 
             var ex = Assert.Throws<ExchangeBusinessException>(() => core.Login("9999", "legacy", "bad"));
             Assert.Equal(SimErrorCodes.BadCredentials, ex.ErrorId);   // 此后凭据受保护
@@ -123,7 +124,7 @@ public class AccountAuthTests
 
         await client.LoginAsync(new LoginArg(SimHarness.Broker, "erin", "pw123"));   // 正确密码仍可登
         var account = await client.QueryAccountAsync();
-        Assert.Equal(SimHarness.InitialBalance, account.Balance, 6);   // 登录态有效——查到自己的账
+        Assert.Equal(SimHarness.SandboxDeposit, account.Balance, 6);   // 登录态有效——查到自己的账
     }
 
     [Fact]

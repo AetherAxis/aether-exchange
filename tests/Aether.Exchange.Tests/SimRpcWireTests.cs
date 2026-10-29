@@ -37,7 +37,7 @@ public class SimRpcWireTests
         // 查询空账本
         var account = await client.QueryAccountAsync();
         Assert.Equal(SimHarness.Account, account.AccountId);
-        Assert.Equal(SimHarness.InitialBalance, account.Balance, 2);
+        Assert.Equal(SimHarness.SandboxDeposit, account.Balance, 2);
         Assert.Empty(await client.QueryPositionsAsync(null));
         Assert.Empty(await client.QueryOrdersAsync(null));
         Assert.Empty(await client.QueryTradesAsync(null));

@@ -30,8 +30,8 @@ public class AccountingInvariantTests
     private static void AssertConserved(Account account, string because = "")
     {
         var staticBalance = account.Balance - account.PositionProfit;
-        Assert.True(Math.Abs(staticBalance - (SimHarness.InitialBalance - account.Commission + account.CloseProfit)) < Tolerance,
-            $"静态余额不守恒{because}：本金 {SimHarness.InitialBalance} - 手续费 {account.Commission} + 平仓盈亏 {account.CloseProfit} " +
+        Assert.True(Math.Abs(staticBalance - (SimHarness.SandboxDeposit - account.Commission + account.CloseProfit)) < Tolerance,
+            $"静态余额不守恒{because}：本金 {SimHarness.SandboxDeposit} - 手续费 {account.Commission} + 平仓盈亏 {account.CloseProfit} " +
             $"应等于 {staticBalance}，实际静态余额 {staticBalance}（余额 {account.Balance} - 浮盈 {account.PositionProfit}）");
 
         Assert.True(Math.Abs(account.Available - (account.Balance - account.CurrMargin - account.FrozenMargin - account.FrozenCash)) < Tolerance,
@@ -171,8 +171,8 @@ public class AccountingInvariantTests
         var after = core.QueryAccount(SimHarness.Account);
         AssertFlat(after);
         Assert.Equal(0, after.Commission, 2); // 撤单不是成交，不产生手续费
-        Assert.Equal(SimHarness.InitialBalance, after.Balance, 2);
-        Assert.Equal(SimHarness.InitialBalance, after.Available, 2);
+        Assert.Equal(SimHarness.SandboxDeposit, after.Balance, 2);
+        Assert.Equal(SimHarness.SandboxDeposit, after.Available, 2);
         AssertConserved(after, "（撤单后）");
     }
 

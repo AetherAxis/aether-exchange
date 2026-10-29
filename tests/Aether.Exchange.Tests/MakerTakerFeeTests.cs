@@ -16,9 +16,12 @@ public class MakerTakerFeeTests
     private static async Task<SimTradingCore> NewCoreAsync()
     {
         var core = new SimTradingCore(
-            new SimOptions { DatabasePath = null, ListedInstruments = new[] { Instrument }, InitialBalance = 1_000_000 },
+            new SimOptions { DatabasePath = null, ListedInstruments = new[] { Instrument } },
             new SimClock(() => SimHarness.TradingNow));
         await core.InitializeAsync();
+        // 开户余额恒 0 ⇒ 参与者与 maker 先显式入金（链上充值替身；平台没有赠金）
+        SimHarness.FundSandbox(core);
+        SimHarness.Fund(core, "maker");
         core.InsertOrder("maker", SimHarness.Limit(Direction.Buy, 30, Bid, instrument: Instrument));
         core.InsertOrder("maker", SimHarness.Limit(Direction.Sell, 30, Ask, instrument: Instrument));
         return core;
@@ -89,7 +92,7 @@ public class MakerTakerFeeTests
     public async Task 差异化费率落盘_重启续用()
     {
         var db = Path.Combine(Path.GetTempPath(), $"ctpsim-mt-{Guid.NewGuid():N}.db");
-        var opts = new SimOptions { DatabasePath = db, ListedInstruments = new[] { Instrument }, InitialBalance = 1_000_000 };
+        var opts = new SimOptions { DatabasePath = db, ListedInstruments = new[] { Instrument } };
         try
         {
             using (var core = new SimTradingCore(opts, new SimClock(() => SimHarness.TradingNow)))
@@ -120,7 +123,7 @@ public class MakerTakerFeeTests
         var balance = a.Balance - (a.CurrMargin + a.FrozenMargin + a.FrozenCash);
         Assert.True(Math.Abs(balance - a.Available) < 0.05,
             $"{accountId}: Available 恒等式破坏（Balance-CurrMargin-Frozen-Frozen={balance} vs Available={a.Available}）");
-        var staticBalance = SimHarness.InitialBalance - a.Commission + a.CloseProfit;
+        var staticBalance = SimHarness.SandboxDeposit - a.Commission + a.CloseProfit;
         Assert.True(Math.Abs(a.Balance - (staticBalance + a.PositionProfit)) < 0.05,
             $"{accountId}: Balance 恒等式破坏（Balance={a.Balance} vs 初始-手续费+平仓盈亏+持仓盈亏={staticBalance + a.PositionProfit}）");
     }

@@ -38,8 +38,8 @@ public class LoginAndQueryTests
         var account = core.QueryAccount(SimHarness.Account);
 
         Assert.Equal(SimHarness.Account, account.AccountId);
-        Assert.Equal(SimHarness.InitialBalance, account.Balance, 2);
-        Assert.Equal(SimHarness.InitialBalance, account.Available, 2);
+        Assert.Equal(SimHarness.SandboxDeposit, account.Balance, 2);
+        Assert.Equal(SimHarness.SandboxDeposit, account.Available, 2);
         Assert.Equal(0, account.FrozenMargin, 2);
         Assert.Equal(0, account.CurrMargin, 2);
         Assert.Equal(0, account.Commission, 2);

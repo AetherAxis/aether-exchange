@@ -16,7 +16,7 @@ CTP 本地仿真交易所——撮合核心（订单簿价格发现归簿 + 成�
 
 - `AETHER_CTP_SIM_ADDR`：监听端点（默认 127.0.0.1:17800）
 - `AETHER_CTP_SIM_DB`：SQLite 路径（默认 ~/.aether/ctp-sim.db）
-- `AETHER_CTP_SIM_BALANCE`：新账户初始资金水龙头（**默认 0 = 平台真相**——比特币模型；仅纯期货开发沙盒「不起链桥、测策略」时显式设置）
+- 资金：**新账户开户余额恒 0，没有任何开关能改**（2026-10-29 起「初始资金 / 开户赠金」参数与环境变量已从代码删除）。场内现金只能由链上 AQ 真实转账进来（`CreditQuoteDeposit` ← 宿主 `LedgerCashRail` 对账），1 AQ = 1 现金。
 - `AETHER_SETTLEMENT_RAIL`：**外部结算轨道**（`ledger-aq` 虚拟币线 | `none` 不接）。不设时按旧手感推导：有 custody seed → `ledger-aq`，否则 `none`。配错值直接启动失败（不静默降级成「不结算」）
 - `AETHER_LEDGER_CUSTODY_SEED` / `AETHER_LEDGER_NODE_ADDR`：`ledger-aq` 轨道的参数（设 seed 才接链；未配置 = 不影响交易链路）
 

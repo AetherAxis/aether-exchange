@@ -7,13 +7,10 @@ namespace Aether.Exchange;
 /// </summary>
 public sealed record SimOptions
 {
-    /// <summary>
-    /// 初始资金（每个新投资者账户首次出现时发放）。**默认 0（2026-10-08 比特币模型定调）**：
-    /// 币是唯一稀缺物，资金只能从「充币铸造→卖出」进来——首登白送现金会令币价失去意义。
-    /// 纯期货开发沙盒（不起链桥、测策略）可显式设 host 环境变量 <c>AETHER_CTP_SIM_BALANCE</c> 开水龙头。
-    /// 测试夹具按需显式传 1e6（沙盒语义留在测试侧，平台真相是 0）。
-    /// </summary>
-    public double InitialBalance { get; init; }
+    // 2026-10-29：**「开户赠金 / 初始资金」已彻底删除**（不留参数、不留环境变量）。
+    // 场内现金只有一个来源——链上 AQ 真实转账（LedgerCashRail 对账 → CreditQuoteDeposit）；
+    // 新账户首登开户余额恒为 0，没有任何开关能让它变成别的值。测试侧要资金就显式调
+    // CreditQuoteDeposit（等价于链上充值），平台不提供水龙头。
 
     /// <summary>仿真数据库路径。null ⇒ 纯内存（不落盘，单测默认）。</summary>
     public string? DatabasePath { get; init; }
@@ -45,7 +42,6 @@ public sealed record SimOptions
         return new SimOptions
         {
             DatabasePath = databasePath,
-            InitialBalance = EnvDouble("AETHER_CTP_SIM_BALANCE", 0),
             ListedInstruments = ParseBoard(Environment.GetEnvironmentVariable("AETHER_CTP_SIM_BOARD")),
             LoginMaxFailures = Math.Max(1, EnvInt("AETHER_CTP_SIM_LOGIN_MAX_FAILURES", 5)),
             LoginLockoutSeconds = Math.Max(0, EnvInt("AETHER_CTP_SIM_LOGIN_LOCKOUT_SEC", 60)),
@@ -62,7 +58,4 @@ public sealed record SimOptions
 
     private static int EnvInt(string name, int fallback)
         => int.TryParse(Environment.GetEnvironmentVariable(name), out var v) ? v : fallback;
-
-    private static double EnvDouble(string name, double fallback)
-        => double.TryParse(Environment.GetEnvironmentVariable(name), out var v) ? v : fallback;
 }
