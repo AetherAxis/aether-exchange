@@ -73,6 +73,11 @@ CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主�
 
 ## 5. 升级记录（2026-10-24）
 
+> **§5 / §7 / 升级补记 都是过程存档，不是当前状态**：记的是"那次升级改了什么、验到什么程度"。
+> 当前形态与跨仓剩余问题看 [`aether-ctp-hosts/doc/ctp-line/README.md`](../aether-ctp-hosts/doc/ctp-line/README.md)；
+> 已修问题的完整复盘看 [`history/2026-10.md`](../aether-ctp-hosts/doc/ctp-line/history/2026-10.md)（含 #24 落盘保序）。
+> 本仓仍有效的待办在下面 §6。
+
 `Directory.Packages.props` 的 `git diff` 只有版本号变化，csproj 无内联版本。
 
 | 项 | 变更前 | 变更后 | 依据 / 验证 |
