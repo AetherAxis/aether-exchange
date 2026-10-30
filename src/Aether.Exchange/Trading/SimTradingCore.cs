@@ -67,7 +67,9 @@ public sealed class SimTradingCore : IDisposable
 
     private readonly Dictionary<string, SimAccountState> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SimInstrument> _instruments = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<Task> _pendingWrites = new();
+    /// <summary>落盘串行链的<b>尾</b>：每次落盘接在上一次之后，保证同一行(account, order_ref)的
+    /// 插入/成交/撤单更新严格保序。**调用方须持 <see cref="_gate"/>**。</summary>
+    private Task _writeTail = Task.CompletedTask;
 
     /// <summary>合约订单簿（客户端互为对手层——价格发现的唯一来源）。全 mutation 在 <see cref="_gate"/> 内。</summary>
     private readonly Dictionary<string, OrderBook> _books = new(StringComparer.OrdinalIgnoreCase);
@@ -245,10 +247,10 @@ public sealed class SimTradingCore : IDisposable
     /// <summary>等待挂起的落盘任务完成（单测确定性用；生产路径不调）。</summary>
     public async Task FlushAsync()
     {
-        Task[] pending;
-        lock (_gate) pending = _pendingWrites.Where(t => !t.IsCompleted).ToArray();
-        if (pending.Length == 0) return;
-        try { await Task.WhenAll(pending).ConfigureAwait(false); }
+        Task tail;
+        lock (_gate) tail = _writeTail;
+        if (tail.IsCompleted) return;
+        try { await tail.ConfigureAwait(false); }
         catch (Exception ex) { Trace.WriteLine($"[CTP-SIM] 落盘刷新异常：{ex.Message}"); }
     }
 
@@ -1160,34 +1162,38 @@ public sealed class SimTradingCore : IDisposable
     }
 
     /// <summary>
-    /// 登记一次 fire-and-forget 落盘。**调用方须持锁**（访问 <see cref="_pendingWrites"/>）。
+    /// 登记一次落盘——**串行**，接在上一次之后。**调用方须持 <see cref="_gate"/>**。
     /// 异常只 <c>Trace</c>——仿真柜台的磁盘故障不得影响交易链路。
+    /// <para>
+    /// 2026-10-30 改成串行链（open-issues #24）。旧写法每次都是 <c>Task.Run</c> 火并忘，同一行的
+    /// 「插入(status=3)」与「成交/撤单更新」是同一个线程池上的两个并发任务，谁先落盘不定；
+    /// <c>ON CONFLICT … DO UPDATE</c> 于是会把较新的状态<b>盖回</b>较旧的快照。实测样本：
+    /// probe1 的 ref <c>000000000002</c> 明明成交了（<c>sim_trade</c> 有 99.37×1、持仓 1 手），
+    /// 它的报单行从 15:29 起一直写「已报入 / 成交 0」；清场时 43 笔「僵尸单」交易所全回
+    /// <c>90009 当前状态「已撤销」不可撤</c>——内存与库对不上，而且总是库更旧。
+    /// 重启时 <c>SimOrderManager.Restore</c> 拿库当真相源 ⇒ 已撤/已成的单会复活成活单。
+    /// </para>
+    /// <para>
+    /// 串行化后单写者吞吐由 SQLite 决定（WAL，单行 upsert 亚毫秒级），本量级（每秒几十单 × 4 条写）
+    /// 有余量；换来的是「落盘顺序 = 内存变更顺序」这个不变量。
+    /// </para>
     /// </summary>
     private void Persist(Func<Task> write)
     {
-        _pendingWrites.RemoveAll(t => t.IsCompleted);
-        try
+        _writeTail = _writeTail.ContinueWith(_ =>
         {
-            var task = Task.Run(async () =>
-            {
-                try { await write().ConfigureAwait(false); }
-                catch (Exception ex) { Trace.WriteLine($"[CTP-SIM] 落盘失败（已忽略）：{ex.Message}"); }
-            });
-            _pendingWrites.Add(task);
-        }
-        catch (Exception ex)
-        {
-            Trace.WriteLine($"[CTP-SIM] 落盘调度失败（已忽略）：{ex.Message}");
-        }
+            try { write().GetAwaiter().GetResult(); }
+            catch (Exception ex) { Trace.WriteLine($"[CTP-SIM] 落盘失败（已忽略）：{ex.Message}"); }
+        }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
 
     /// <summary>等待挂起写盘（登出等需要立即一致的场合）。</summary>
     private void Flush()
     {
-        Task[] pending;
-        lock (_gate) pending = _pendingWrites.Where(t => !t.IsCompleted).ToArray();
-        if (pending.Length == 0) return;
-        try { Task.WhenAll(pending).GetAwaiter().GetResult(); }
+        Task tail;
+        lock (_gate) tail = _writeTail;
+        if (tail.IsCompleted) return;
+        try { tail.GetAwaiter().GetResult(); }
         catch (Exception ex) { Trace.WriteLine($"[CTP-SIM] 落盘刷新异常：{ex.Message}"); }
     }
 }
