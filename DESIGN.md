@@ -17,7 +17,7 @@ CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主�
 | `src/Aether.Exchange` | 撮合/账户/持仓/风控/行情/时钟/合约种子 | `SimTradingCore`、`OrderBook`、`SimAccount`、`SimPositionManager`、`SimRiskEngine` | 无（仅 BCL） |
 | `src/Aether.Exchange.Rpc` | 长度前缀 + JSON 帧；路由与请求应答 | `SimFraming`、`SimWire`、`SimRpcServer`、`SimRpcClient` | `Aether.Exchange` |
 | `src/Aether.Exchange.Storage` | SQLite 8 表落盘、幂等迁移 | `SimStore`、`SqliteStoreBase`、`SqliteMigrations` | 核心 + `Microsoft.Data.Sqlite` |
-| `tests/Aether.Exchange.Tests` | 138 例：撮合/生命周期/会计/费用/风控/认证/持久化 | `SimHarness` | 上述三项目 |
+| `tests/Aether.Exchange.Tests` | 143 例：撮合/生命周期/会计/费用/风控/认证/持久化 | `SimHarness` | 上述三项目 |
 
 ## 3. 关键设计决策
 
@@ -39,11 +39,17 @@ CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主�
 - **理由**：回调可重入，持锁会自死锁；客户端应答后才注册 CancelKey。
 - **代价**：单锁不扩横向；顺序只保本连接。
 
-### 3.4 落盘尽力而为，失败绝不拒单
+### 3.4 落盘尽力而为，失败绝不拒单（但**保序**）
 
-- **决策**：`ISimStore` fire-and-forget，异常只 `Trace`；核心默认 `NullSimStore`。
+- **决策**：`ISimStore` 调用方不等结果，异常只 `Trace`；核心默认 `NullSimStore`。
 - **理由**：诊断工具不该因磁盘故障拒单；默认不落盘让单测零磁盘。
 - **代价**：崩溃丢最后几笔；重启簿空、非终态单作废。
+- **保序（2026-10-30 修，`open-issues` #24）**：`Persist()` 从 `Task.Run` 火并忘改成**单写者串行链**
+  （`_writeTail = _writeTail.ContinueWith(...)`，`Flush/FlushAsync` 等链尾）。并发时同一行
+  (account, order_ref) 的「插入('3')」与「成交/撤单更新」谁先落不定，`ON CONFLICT … DO UPDATE`
+  会把新状态**盖回**旧快照——实测 probe1 ref `000000000002` 成交了，表里却一直是「已报入 / 成交 0」。
+  串行化后不变量是**落盘顺序 = 内存变更顺序**；吞吐交给 SQLite（WAL 单行 upsert），本量级有余量。
+  钉子：`tests/Aether.Exchange.Tests/PersistenceOrderingTests`（让被测账户第一笔写慢 80ms，还原旧实现即挂）。
 
 ### 3.5 资金只能从链上充值铸造，初始 0
 
@@ -63,7 +69,7 @@ CTP 本地仿真交易所，开发与 E2E 的「真实柜台替身」。宿主�
 - 配置由宿主读环境变量：`AETHER_CTP_SIM_ADDR`/`_DB`（默认 `~/.aether/ctp-sim.db`，与真实 `ctp.db` 分文件）/`_BALANCE`/`_BOARD`。
 - 测试确定性：`DatabasePath = null`、固定时钟（2026-09-23 周三 10:00）、价格全部来自显式挂单；落盘用例注入 `SimStore.ForFile`。
 - CI：ubuntu + .NET 10.0.x，注入 GitHub Packages 凭据。
-- 计数：118 个 `[Fact]` + 2 个 `[Theory]`（20 条 `InlineData`）= 138。
+- 计数：`dotnet test` 报 **143** 例全过（2026-10-30 实测；含新增的落盘顺序钉子）。
 
 ## 5. 升级记录（2026-10-24）
 
