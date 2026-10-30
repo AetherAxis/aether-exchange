@@ -202,6 +202,7 @@ public sealed class SimTradingCore : IDisposable
                         {
                             VolumeTotal = 0,
                             OrderStatusRaw = SimOrderStatus.NoTradeNotQueueing,
+                            UpdateTime = _clock.TimeOfDay,   // 作废是**这次启动**发生的，别留着上次的更新时间
                             StatusMsg = "重启后未成交挂单已作废",
                         }
                         : order;
