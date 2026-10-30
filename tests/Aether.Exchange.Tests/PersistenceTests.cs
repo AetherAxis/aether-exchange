@@ -146,6 +146,14 @@ public class PersistenceTests
                 Assert.Equal(0, after.FrozenMargin, 2);
                 Assert.Equal(0, after.FrozenCash, 2);
                 Assert.Equal(after.Balance, after.Available, 2);
+
+                // 作废也要**落盘**（open-issues #24）：只改内存会让「内存=作废 / 库=已报入」永久分叉，
+                // 下次重启又从库里读回 '3'。这里直接查库确认收敛。
+                await second.FlushAsync();
+                var persisted = Assert.Single(await SimStore.ForFile(dbPath).LoadOrdersAsync(SimHarness.Account));
+                Assert.Equal((char)SimOrderStatus.NoTradeNotQueueing, (char)persisted.OrderStatusRaw);
+                Assert.Equal(0, persisted.VolumeTotal);
+                Assert.Contains("作废", persisted.StatusMsg);
             }
         }
         finally

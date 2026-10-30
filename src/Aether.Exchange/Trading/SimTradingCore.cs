@@ -196,14 +196,24 @@ public sealed class SimTradingCore : IDisposable
                     // 与已恢复的历史报单**同号**——Accept 会覆盖历史单并把键插进插入序两遍
                     // （同一笔报单在查询里回两行），且客户端侧的单号也重号。
                     state.NextOrderRefSeq = Math.Max(state.NextOrderRefSeq, ParseOrderRefSeq(order.OrderRef));
-                    state.Orders.Restore(SimOrderStatus.IsTerminal(order.OrderStatusRaw)
-                        ? order
-                        : order with
+                    var voided = !SimOrderStatus.IsTerminal(order.OrderStatusRaw);
+                    var restoredOrder = voided
+                        ? order with
                         {
                             VolumeTotal = 0,
                             OrderStatusRaw = SimOrderStatus.NoTradeNotQueueing,
                             StatusMsg = "重启后未成交挂单已作废",
-                        }, maxTradeId);
+                        }
+                        : order;
+                    state.Orders.Restore(restoredOrder, maxTradeId);
+
+                    // 作废也要落盘：库里的 '3' 是**旧代码**写坏的快照（open-issues #24），只改内存会让
+                    // 「内存=作废 / 库=已报入」永久分叉——正是 #24 要消灭的那种不一致。写回后两者收敛。
+                    if (voided)
+                    {
+                        var row = restoredOrder;
+                        Persist(() => _store.SaveOrderAsync(snapshot.AccountId, row));
+                    }
                 }
                 _states[snapshot.AccountId] = state;
             }
