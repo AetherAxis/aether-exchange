@@ -446,21 +446,42 @@ public sealed class SimTradingCore : IDisposable
         }
     }
 
-    /// <summary>查询报单（可选按合约过滤）。</summary>
+    /// <summary>
+    /// 单次查询返回行数上限。<b>不是性能优化，是线协议的安全阀</b>（2026-10-31 定案）：
+    /// 账本保留全部历史，做市账户一天几万条；旧版 <see cref="QueryOrders"/> 全量返回，botnoise 的
+    /// 查报单应答序列化后 **19.8 MB**，而 <see cref="SimFraming"/> 的单帧上限是 16 MiB ⇒ 客户端读到
+    /// 「帧长度非法」立刻拆链路 ⇒ 重连后对账再查 ⇒ 再 19.8 MB ⇒ 又断。现场表现就是 bot 每秒
+    /// 「Connected → Disconnected」闪断、交易所侧一条错误都没有（服务端只是老实发了个合法却过大的帧）。
+    /// 取 200 与 CTP 前置的查报单封顶（<c>QueryOrderRowCap</c>）同值：**前置路径与直连路径看到同一批行**。
+    /// </summary>
+    public const int QueryRowCap = 200;
+
+    /// <summary>
+    /// 查询报单（可选按合约过滤）。行数封顶 <see cref="QueryRowCap"/>：**活单优先，余额用最新终态补足**
+    /// （账本插入序 = 最旧在前，所以终态取尾部——刚被撤/刚成交的那批才看得见）。
+    /// 与前置 <c>CtpFrontSession</c> 的选行规则逐条一致，避免两条路径对账结果不同。
+    /// </summary>
     public IReadOnlyList<Order> QueryOrders(string accountId, string? instrumentId = null)
     {
         lock (_gate)
         {
             var state = Find(accountId);
             if (state is null) return Array.Empty<Order>();
-            var all = state.Orders.All.Select(e => e.Order);
+            IEnumerable<Aether.Exchange.SimOrderEntry> seq = state.Orders.All;
             if (!string.IsNullOrWhiteSpace(instrumentId))
-                all = all.Where(o => string.Equals(o.InstrumentId, instrumentId, StringComparison.OrdinalIgnoreCase));
-            return all.ToList();
+                seq = seq.Where(e => string.Equals(e.Order.InstrumentId, instrumentId, StringComparison.OrdinalIgnoreCase));
+            var list = seq.ToList();
+
+            var picked = list.Where(e => SimOrderStatus.IsLive(e.Order.OrderStatusRaw)).Take(QueryRowCap).ToList();
+            if (picked.Count < QueryRowCap)
+                picked.AddRange(list.Where(e => !SimOrderStatus.IsLive(e.Order.OrderStatusRaw))
+                                    .TakeLast(QueryRowCap - picked.Count));
+            return picked.Select(e => e.Order).ToList();
         }
     }
 
-    /// <summary>查询成交（可选按合约过滤）——查成交 <c>ReqQryTrade</c> 的数据源。</summary>
+    /// <summary>查询成交（可选按合约过滤）——查成交 <c>ReqQryTrade</c> 的数据源。同样封顶：取**最新**的
+    /// <see cref="QueryRowCap"/> 笔（插入序即时间序）。全量返回会同时撑爆线协议帧上限和前置的逐笔一帧写出。</summary>
     public IReadOnlyList<Trade> QueryTrades(string accountId, string? instrumentId = null)
     {
         lock (_gate)
@@ -470,7 +491,7 @@ public sealed class SimTradingCore : IDisposable
             var all = state.Trades.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(instrumentId))
                 all = all.Where(t => string.Equals(t.InstrumentId, instrumentId, StringComparison.OrdinalIgnoreCase));
-            return all.ToList();
+            return all.TakeLast(QueryRowCap).ToList();
         }
     }
 

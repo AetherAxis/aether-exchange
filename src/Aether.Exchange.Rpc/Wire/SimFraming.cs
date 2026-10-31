@@ -7,7 +7,9 @@ namespace Aether.Exchange.Rpc;
 /// </summary>
 public static class SimFraming
 {
-    private const int MaxFrameBytes = 16 * 1024 * 1024;
+    /// <summary>单帧载荷上限（16 MiB）。<b>发送端也必须照着它自查</b>——超过上限的帧读端一律判协议故障并
+    /// 断开连接；发送端闷头发出去，对端就只能「无故断线」（2026-10-31 botnoise 每秒闪断就是这么来的）。</summary>
+    public const int MaxFrameBytes = 16 * 1024 * 1024;
 
     public static async Task WriteFrameAsync(Stream stream, ReadOnlyMemory<byte> payload, CancellationToken ct = default)
     {

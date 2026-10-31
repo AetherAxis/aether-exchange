@@ -319,6 +319,19 @@ internal sealed class SimConnection
                     err is null ? ToElement(result) : null,
                     err),
                 SimJson.Options);
+
+            // 发出超过线协议上限的帧 = 亲手把对端逼进「帧长度非法 ⇒ 断开连接」，而对端日志只会写一句
+            // 不明所以的断连。发送前自查：换成一条写明了原因的错误应答，链路与状态都不受影响。
+            // （2026-10-31 botnoise 闪断的真正源头就是一条 19.8 MB 的查报单应答；数据侧同时已加行数封顶。）
+            if (resp.Length > SimFraming.MaxFrameBytes)
+            {
+                Trace.WriteLine($"[CTP-SIM] 应答过大，拒绝发送：op={req.Op} {resp.Length:N0}B > {SimFraming.MaxFrameBytes:N0}B（连接保持）");
+                resp = JsonSerializer.SerializeToUtf8Bytes(
+                    new SimResponse(req.Id, false, null,
+                        new SimWireError(SimWireErrors.Protocol,
+                            $"应答过大（{resp.Length:N0}B > {SimFraming.MaxFrameBytes:N0}B）：op={req.Op}。请缩小查询范围。")),
+                    SimJson.Options);
+            }
             lock (_writeGate)
             {
                 if (!_closed)

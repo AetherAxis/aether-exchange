@@ -47,6 +47,17 @@ public sealed class SimRpcClient : IDisposable
     private Task? _receiveLoop;
     private long _nextId;
     private volatile bool _alive;
+
+    /// <summary>
+    /// 连接世代。每次 <see cref="ConnectAsync"/> 建链前 +1；接收循环带着自己的世代号收尾——
+    /// 世代已翻篇说明那条循环属于**上一条**连接，它的 finally 绝不能去拆刚建好的新 socket。
+    /// <para><b>为什么必须有（2026-10-31 定案）：</b>旧实现里旧循环的 finally 无条件
+    /// <c>TearDownWithEvent()</c>，而 <c>TearDown()</c> 拆的是<b>字段</b> <c>_stream</c>——重连已经把它
+    /// 换成新 socket 了。于是一次外部断连之后：旧循环收尾 → 拆掉新连接 → 客户端再重登 → 又拆……
+    /// botnoise 现场就是「Connected 1 秒 → Disconnected → Connected」每秒一次、永不停歇的闪断
+    /// （日志 315 次/3 分钟），而交易所侧一条错误都没有——因为根本没有人在出错，是我们自己拆自己。</para>
+    /// </summary>
+    private int _epoch;
     private bool _disposed;
     private int _lostRaised;
     private int _consecutiveTimeouts;
@@ -91,6 +102,9 @@ public sealed class SimRpcClient : IDisposable
         {
             if (IsAlive) return Hello!;
 
+            // 先作废旧世代，再拆旧 socket：旧接收循环会在拆的瞬间从 ReadFrame 抛出来走 finally，
+            // 那时它必须已经是「上一代」——否则它拆掉的是下面刚建好的新连接（见 _epoch 注释）。
+            var epoch = Interlocked.Increment(ref _epoch);
             TearDown();   // 清理上次断连的残留 socket（不发事件——是重建不是故障通知）
 
             var tcp = new TcpClient();
@@ -113,7 +127,7 @@ public sealed class SimRpcClient : IDisposable
             _stream = tcp.GetStream();
             _alive = true;
             _lostRaised = 0;
-            _receiveLoop = Task.Run(ReceiveLoopAsync);
+            _receiveLoop = Task.Run(() => ReceiveLoopAsync(epoch));
 
             var hello = await CallCoreAsync<SimHello>(SimOps.Hello, null, ct).ConfigureAwait(false);
             Hello = hello ?? throw new ExchangeBusinessException(SimWireErrors.Protocol, "仿真柜台 Hello 握手返回空。");
@@ -295,7 +309,7 @@ public sealed class SimRpcClient : IDisposable
 
     // —— 接收循环 ——
 
-    private async Task ReceiveLoopAsync()
+    private async Task ReceiveLoopAsync(int epoch)
     {
         try
         {
@@ -305,8 +319,18 @@ public sealed class SimRpcClient : IDisposable
 
                 SimFrame? frame;
                 try { frame = JsonSerializer.Deserialize<SimFrame>(bytes, SimJson.Options); }
-                catch (JsonException) { break; }   // 坏帧 ⇒ 断连
-                if (frame is null) break;
+                catch (JsonException ex)
+                {
+                    // 坏帧 ⇒ 断连。旧实现静默 break——「连接怎么断的」在服务形态下就是黑盒，
+                    // 与 #32 同一条教训：断连一定要留下名字。
+                    Trace.WriteLine($"[CTP-SIM] RPC 收到坏帧（断开该连接）：{ex.Message}（{bytes.Length}B）");
+                    break;
+                }
+                if (frame is null)
+                {
+                    Trace.WriteLine("[CTP-SIM] RPC 收到空帧（断开该连接）");
+                    break;
+                }
 
                 if (frame.Ev is not null)
                 {
@@ -330,12 +354,12 @@ public sealed class SimRpcClient : IDisposable
             // 读取异常（socket 关闭/帧损坏）⇒ 收尾统一走 finally。
             // 主动 Dispose 已把 _alive 置 false，那种情况不记；只有「意外中断」才留一行——
             // 否则「链路到底怎么断的」在服务形态下永远是黑盒（2026-10-31 排 30 秒闪断时踩过）。
-            if (IsAlive)
+            if (IsAlive && epoch == Volatile.Read(ref _epoch))
                 Trace.WriteLine($"[CTP-SIM] RPC 接收循环中断（连接将拆除）：{ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
-            TearDownWithEvent();
+            TearDownWithEvent(epoch);   // 世代已翻篇 ⇒ 旧循环收尾，不得拆新连接（见 _epoch）
         }
     }
 
@@ -382,8 +406,15 @@ public sealed class SimRpcClient : IDisposable
         }
     }
 
-    private void TearDownWithEvent()
+    private void TearDownWithEvent() => TearDownWithEvent(Volatile.Read(ref _epoch));
+
+    /// <summary>
+    /// 按世代拆除。<paramref name="epoch"/> 与当前世代不符 ⇒ 这是**上一条**连接的收尾，直接返回：
+    /// <c>TearDown()</c> 拆的是字段 <c>_stream</c>，此刻它已经指向新连接了。
+    /// </summary>
+    private void TearDownWithEvent(int epoch)
     {
+        if (epoch != Volatile.Read(ref _epoch)) return;
         TearDown();
         if (Interlocked.Exchange(ref _lostRaised, 1) == 0)
         {
