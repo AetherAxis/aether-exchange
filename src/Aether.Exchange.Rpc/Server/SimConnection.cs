@@ -97,13 +97,21 @@ internal sealed class SimConnection
 
                 SimRequest? req;
                 try { req = JsonSerializer.Deserialize<SimRequest>(bytes, SimJson.Options); }
-                catch (JsonException) { break; }   // 坏帧 ⇒ 断连
-                if (req is null) break;
+                catch (JsonException ex)
+                {
+                    Trace.WriteLine($"[CTP-SIM] 收到坏帧（断开该连接）：{ex.Message}（{bytes.Length}B）");
+                    break;
+                }
+                if (req is null)
+                {
+                    Trace.WriteLine($"[CTP-SIM] 收到空请求帧（断开该连接）：{bytes.Length}B");
+                    break;
+                }
 
                 try { await HandleAsync(req).ConfigureAwait(false); }
                 catch (Exception ex)
                 {
-                    Trace.WriteLine($"[CTP-SIM] 连接分发故障（断开）：{ex.Message}");
+                    Trace.WriteLine($"[CTP-SIM] 连接分发故障（断开）：op={req.Op} {ex.GetType().Name}: {ex.Message}");
                     break;
                 }
             }

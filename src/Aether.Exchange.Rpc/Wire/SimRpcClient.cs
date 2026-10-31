@@ -13,8 +13,11 @@ namespace Aether.Exchange.Rpc;
 /// ErrorId 精度是 <c>ICtpSession</c> 接缝的既定契约（测试与消费方都断言 ErrorId），绝不能降级成 IOException 泛型。
 /// </para>
 /// <para>
-/// <b>超时与取消</b>：内部 15s 超时后连接状态不可信 ⇒ 销毁连接（迟到应答按 id 查表 miss 安全丢弃，id 单调不复用）；
-/// 调用方取消只取消该请求，连接保留。连接被拒包装为 <c>ExchangeBusinessException(NotRunning, 含启动命令)</c>。
+/// <b>超时与取消</b>：内部 15s 超时只让**该请求**失败，连接保留（2026-10-31 起；旧行为是「一次慢应答 =
+/// 整条链路拆除」，上层表现为 <c>ConnectionLost</c> → 前置踢客户端会话 → 每 30 秒无故断一次）。
+/// 迟到应答按 id 查表 miss 安全丢弃，id 单调不复用。连续 <see cref="MaxConsecutiveTimeouts"/> 次超时才判定
+/// 链路失效并拆除（否则服务端卡在一个长 op 上会把后续请求全部吊死）。调用方取消只取消该请求，连接保留。
+/// 连接被拒包装为 <c>ExchangeBusinessException(NotRunning, 含启动命令)</c>。
 /// </para>
 /// <para>
 /// <b>不做自动重连</b>（镜像 Phase 1「本地无网络可断」的诚实度——现在 host 死亡时会断，由上层重新登录触发重连）。
@@ -25,8 +28,15 @@ public sealed class SimRpcClient : IDisposable
     private const int DefaultTimeoutMs = 15_000;
     private const int ConnectTimeoutMs = 5_000;
 
+    /// <summary>连续超时到这个次数才拆链路：单次慢应答不等于链路失效（2026-10-31）。</summary>
+    private const int MaxConsecutiveTimeouts = 3;
+
+    /// <summary>超过这个耗时就记一行「慢应答」——排查「谁把链路拖到超时」的一手证据。</summary>
+    private const int SlowCallMs = 3_000;
+
     private readonly string _host;
     private readonly int _port;
+    private readonly int _requestTimeoutMs;
     private readonly SemaphoreSlim _connectGate = new(1, 1);   // 连接单飞（VM 登录与自动订阅可能并发触发）
     private readonly SemaphoreSlim _writeGate = new(1, 1);     // 串行化帧写入（并发 CallAsync 不得交错写坏帧）
     private readonly ConcurrentDictionary<long, Pending> _pending = new();
@@ -39,11 +49,13 @@ public sealed class SimRpcClient : IDisposable
     private volatile bool _alive;
     private bool _disposed;
     private int _lostRaised;
+    private int _consecutiveTimeouts;
 
-    public SimRpcClient(string host, int port)
+    public SimRpcClient(string host, int port, int requestTimeoutMs = DefaultTimeoutMs)
     {
         _host = host;
         _port = port;
+        _requestTimeoutMs = requestTimeoutMs > 0 ? requestTimeoutMs : DefaultTimeoutMs;
     }
 
     /// <summary>Hello 结果（连接成功后有效；断线后为 null，需重新连接）。</summary>
@@ -117,7 +129,8 @@ public sealed class SimRpcClient : IDisposable
 
     /// <summary>
     /// 请求-应答调用。未连接/断线 ⇒ <c>ExchangeBusinessException(ConnectionLost)</c>（上层应先 <see cref="ConnectAsync"/>）；
-    /// 内部超时 ⇒ <c>Timeout</c> 并销毁连接；服务端错误 ⇒ 原样重建的 <see cref="ExchangeBusinessException"/>。
+    /// 内部超时 ⇒ <c>Timeout</c>，**连接保留**（连续 <see cref="MaxConsecutiveTimeouts"/> 次才拆除）；
+    /// 服务端错误 ⇒ 原样重建的 <see cref="ExchangeBusinessException"/>。
     /// </summary>
     public async Task<T?> CallAsync<T>(string op, object? arg, CancellationToken ct = default) where T : class
     {
@@ -145,19 +158,36 @@ public sealed class SimRpcClient : IDisposable
                 _writeGate.Release();
             }
 
+            var startedAt = Stopwatch.GetTimestamp();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(DefaultTimeoutMs);
+            timeout.CancelAfter(_requestTimeoutMs);
             try
             {
                 var result = await tcs.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+                Interlocked.Exchange(ref _consecutiveTimeouts, 0);
+                var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                if (elapsedMs >= SlowCallMs)
+                    Trace.WriteLine($"[CTP-SIM] 慢应答 {elapsedMs}ms：op={op}（已成功，连接未动）");
                 return result is null ? null : result.Value.Deserialize<T>(SimJson.Options);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                // 内部超时：连接状态不可信 ⇒ 销毁连接（迟到应答按 id 查表 miss 丢弃）
-                TearDownWithEvent();
+                // 内部超时（2026-10-31 改）：**不立刻拆链路**。旧行为「一次慢应答 = 整条连接销毁」会让
+                // 任意一个偶发慢 op 变成一次对外可见的断线（前置 Kick → 客户端会话重建），现场就是
+                // 「每 30 秒无故断一次」。单次超时只让这一个请求失败；链路是否真死由读循环自己判——
+                // 迟到的应答按 id 查表 miss 天然丢弃。连续超时达到阈值才认账（防服务端卡死吊死后续调用）。
+                var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                var n = Interlocked.Increment(ref _consecutiveTimeouts);
+                if (n >= MaxConsecutiveTimeouts)
+                {
+                    Trace.WriteLine($"[CTP-SIM] 连续 {n} 次请求超时（本次 {elapsedMs}ms，op={op}）——判定链路失效，拆除连接");
+                    TearDownWithEvent();
+                    throw new ExchangeBusinessException(SimWireErrors.Timeout,
+                        $"等待仿真柜台应答超时（{DefaultTimeoutMs / 1000}s）：op={op}。连续 {n} 次超时，连接已重置，请重新登录。");
+                }
+                Trace.WriteLine($"[CTP-SIM] 请求超时（{elapsedMs}ms > {_requestTimeoutMs}ms）：op={op} —— 只失败该请求，连接保留（连续第 {n} 次）");
                 throw new ExchangeBusinessException(SimWireErrors.Timeout,
-                    $"等待仿真柜台应答超时（{DefaultTimeoutMs / 1000}s）：op={op}。连接已重置，请重新登录。");
+                    $"等待仿真柜台应答超时（{DefaultTimeoutMs / 1000}s）：op={op}。连接保留，可重试。");
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -295,9 +325,13 @@ public sealed class SimRpcClient : IDisposable
                 // id 查表 miss（超时已放弃 / fire-and-forget 的迟到应答）⇒ 安全丢弃
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // 读取异常（socket 关闭/帧损坏）⇒ 收尾统一走 finally
+            // 读取异常（socket 关闭/帧损坏）⇒ 收尾统一走 finally。
+            // 主动 Dispose 已把 _alive 置 false，那种情况不记；只有「意外中断」才留一行——
+            // 否则「链路到底怎么断的」在服务形态下永远是黑盒（2026-10-31 排 30 秒闪断时踩过）。
+            if (IsAlive)
+                Trace.WriteLine($"[CTP-SIM] RPC 接收循环中断（连接将拆除）：{ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
